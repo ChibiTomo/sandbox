@@ -48,7 +48,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 	// Setting my_unload as unload function
 	driverObject->DriverUnload = my_unload;
 
-//	deviceObject->Flags |= IO_TYPE;
+	deviceObject->Flags |= IO_TYPE;
 	deviceObject->Flags &= (~DO_DEVICE_INITIALIZING);	// DO_DEVICE_INITIALIZING: tell to not send I/O request to
 														// the device. It is MANDATORY to clear it to use the device.
 														// (except in DriverEntry because it is automatic)
@@ -107,6 +107,46 @@ NTSTATUS STDCALL my_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 	DbgPrint("my_write_direct called \n");
+
+	/*
+	* Each time the IRP is passed down
+	* the driver stack a new stack location is added
+	* specifying certain parameters for the IRP to the driver.
+	*/
+	PIO_STACK_LOCATION pIoStackIrp = NULL;
+	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+
+	if (!pIoStackIrp) {
+		goto cleanup;
+	}
+
+	PCHAR pWriteDataBuffer;
+	pWriteDataBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+
+	if (!pWriteDataBuffer) {
+		goto cleanup;
+	}
+
+	/*
+	* We need to verify that the string
+	* is NULL terminated. Bad things can happen
+	* if we access memory not valid while in the Kernel.
+	*/
+	if(isStrNullTerminated(pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length)) {
+		DbgPrint(pWriteDataBuffer);
+	}
+
+cleanup:
+	/*
+	 * /!\MANDATORY/!\
+	 * Tell to the I/O Manager that the driver has finish to work with the IRP
+	 * Can lead to BSOD if not called
+	 *
+	 * http://msdn.microsoft.com/en-us/library/windows/hardware/ff565381(v=vs.85).aspx
+	**/
+	IoCompleteRequest(	Irp, 				// pointer to the IRP
+						IO_NO_INCREMENT);	// priority, system-defined constant. Check ntddk.h
+
 	return status;
 }
 
@@ -120,4 +160,19 @@ NTSTATUS STDCALL my_write_neither(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 	DbgPrint("my_write_neither called \n");
 	return status;
+}
+
+BOOLEAN isStrNullTerminated(PCHAR str, UINT length) {
+	BOOLEAN result = FALSE;
+
+	UINT i = 0;
+	while (i < length && result == FALSE) {
+		if(str[i] == '\0') {
+			result = TRUE;
+		} else {
+			i++;
+		}
+	}
+
+	return result;
 }

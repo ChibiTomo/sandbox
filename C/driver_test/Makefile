@@ -1,5 +1,5 @@
 all:
-	gcc -c -I/mingw/include/ddk -std=gnu99 -o driver.o driver.c
+	gcc -c -I/mingw/include/ddk -std=gnu99 -o driver.o driver.c -D__USE_DIRECT__
 	gcc -Wl,--base-file,driver.base \
 		-Wl,--subsystem,native \
 		-Wl,--entry,_DriverEntry@8 \
@@ -23,9 +23,10 @@ all:
 		-o my_driver.sys \
 		driver.o \
 		-lntoskrnl -lhal
+	gcc -o tester tester.c
 
 clean:
-	rm -f *sys *o *base *tmp *pe *exp *def *dll.a
+	rm -f *sys *o *base *tmp *pe *exp *def *dll.a *exe
 
 
 #dll_import:
