@@ -3,6 +3,12 @@
 VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject) {
 	DbgPrint("GoodBye!!\n");
 
+	// Remove SymLinks
+	UNICODE_STRING dosDeviceName;
+	RtlInitUnicodeString(&dosDeviceName, L"\\DosDevices\\Example");
+	IoDeleteSymbolicLink(&dosDeviceName);
+
+	// Remove device
 	PDEVICE_OBJECT device = DriverObject->DeviceObject;
 	if (device != NULL) {
 		IoDeleteDevice(device);
@@ -84,6 +90,13 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 
 	// Setting my_unload as unload function
 	driverObject->DriverUnload = my_unload;
+
+//	deviceObject->Flags |= IO_TYPE;
+	deviceObject->Flags &= (~DO_DEVICE_INITIALIZING);	// DO_DEVICE_INITIALIZING: tell to not send I/O request to
+														// the device. It is MANDATORY to clear it to use the device.
+														// (except in DriverEntry because it is automatic)
+
+	IoCreateSymbolicLink(&dosDeviceName, &deviceName);
 
 cleanup:
 	return status;
