@@ -1,4 +1,6 @@
 #include <ntddk.h>
+#include <windows.h>
+#include <setjmp.h>
 
 #include "driver.h"
 
@@ -121,7 +123,9 @@ NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	}
 
 	PCHAR pWriteDataBuffer;
+// SPECIALIZED PART
 	pWriteDataBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+// SPECIALIZED PART END
 
 	if (!pWriteDataBuffer) {
 		goto cleanup;
@@ -138,7 +142,7 @@ NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 cleanup:
 	/*
-	 * /!\MANDATORY/!\
+	 * /!\MANDATORY after MmGetSystemAddressForMdlSafe/!\
 	 * Tell to the I/O Manager that the driver has finish to work with the IRP
 	 * Can lead to BSOD if not called
 	 *
@@ -153,12 +157,92 @@ cleanup:
 NTSTATUS STDCALL my_write_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 	DbgPrint("my_write_buffered called \n");
+
+	PIO_STACK_LOCATION pIoStackIrp = NULL;
+	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+
+	if(!pIoStackIrp) {
+		goto cleanup;
+	}
+
+	PCHAR pWriteDataBuffer;
+// SPECIALIZED PART
+	pWriteDataBuffer = (PCHAR)Irp->AssociatedIrp.SystemBuffer;
+// SPECIALIZED PART END
+
+	if(!pWriteDataBuffer) {
+		goto cleanup;
+	}
+	/*
+	* We need to verify that the string
+	* is NULL terminated. Bad things can happen
+	* if we access memory not valid while in the Kernel.
+	*/
+	if(isStrNullTerminated(pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length)) {
+		DbgPrint(pWriteDataBuffer);
+	}
+
+cleanup:
 	return status;
 }
+
+jmp_buf g_ex_buf__;
+
+LONG WINAPI my_write_neither_seh(LPEXCEPTION_POINTERS ExceptionInfo) {
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+
+BOOL my_ProbeForRead(PVOID Address, SIZE_T Length, ULONG Alignment) {
+	if (setjmp(g_ex_buf__) == 0) {
+		SetUnhandledExceptionFilter(my_handler);
+		ProbeForRead(Address, Length, Alignment);
+	} else {
+		SetUnhandledExceptionFilter(NULL);
+		return FALSE;
+	}
+	return TRUE;
+};
 
 NTSTATUS STDCALL my_write_neither(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 	DbgPrint("my_write_neither called \n");
+
+	PIO_STACK_LOCATION pIoStackIrp = NULL;
+	PCHAR pWriteDataBuffer;
+
+	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+
+	if(!pIoStackIrp) {
+		goto cleanup;
+	}
+
+// SPECIALIZED PART
+	/*
+	* We need this in an exception handler or else we could trap.
+	*/
+		if (!my_ProbeForRead(Irp->UserBuffer,
+							pIoStackIrp->Parameters.Write.Length,
+							TYPE_ALIGNMENT(char)))
+		{
+			status = GetExceptionCode();
+			goto cleanup;
+		}
+		pWriteDataBuffer = Irp->UserBuffer;
+// SPECIALIZED PART END
+
+		if(!pWriteDataBuffer) {
+			goto cleanup;
+		}
+		/*
+		* We need to verify that the string
+		* is NULL terminated. Bad things can happen
+		* if we access memory not valid while in the Kernel.
+		*/
+		if(isStrNullTerminated(pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length)) {
+			DbgPrint(pWriteDataBuffer);
+		}
+
+cleanup:
 	return status;
 }
 

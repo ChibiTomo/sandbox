@@ -1,0 +1,35 @@
+#ifndef DRIVER_H
+#define DRIVER_H
+
+#include <ntddk.h>
+
+VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject);
+NTSTATUS STDCALL unsuported_function(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL my_close(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL my_create(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL my_io_control(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL my_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
+// The only difference between those functions is the access method to the data buffer
+NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL my_write_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL my_write_neither(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
+BOOLEAN isStrNullTerminated(PCHAR pString, UINT uiLength);
+
+#ifdef __USE_DIRECT__
+#define IO_TYPE DO_DIRECT_IO
+#define USE_WRITE_FUNCTION my_write_direct
+#endif // __USE_DIRECT__
+
+#ifdef __USE_BUFFERED__
+#define IO_TYPE DO_BUFFERED_IO
+#define USE_WRITE_FUNCTION  my_write_buffered
+#endif // __USE_BUFFERED__
+
+#ifndef IO_TYPE
+#define IO_TYPE 0
+#define USE_WRITE_FUNCTION  my_write_neither
+#endif // IO_TYPE
+
+#endif // DRIVER_H
