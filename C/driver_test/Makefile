@@ -1,5 +1,5 @@
 all:
-	gcc -c -I/mingw/include/ddk -o driver.o driver.c
+	gcc -c -I/mingw/include/ddk -std=gnu99 -o driver.o driver.c
 	gcc -Wl,--base-file,driver.base \
 		-Wl,--subsystem,native \
 		-Wl,--entry,_DriverEntry@8 \
