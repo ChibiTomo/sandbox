@@ -1,5 +1,4 @@
 #include <ntddk.h>
-#include <windows.h>
 
 #define TYPE_ALIGNMENT(type) offsetof(struct {char x; type t;}, t)
 
