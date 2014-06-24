@@ -44,7 +44,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 	driverObject->MajorFunction[IRP_MJ_CLOSE] = my_close;
 	driverObject->MajorFunction[IRP_MJ_CREATE] = my_create;
 	driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = my_io_control;
-	driverObject->MajorFunction[IRP_MJ_READ] = my_read;
+	driverObject->MajorFunction[IRP_MJ_READ] = USE_READ_FUNCTION;
 	driverObject->MajorFunction[IRP_MJ_WRITE] = USE_WRITE_FUNCTION;
 
 	// Setting my_unload as unload function
@@ -100,15 +100,11 @@ NTSTATUS STDCALL my_io_control(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	return status;
 }
 
-NTSTATUS STDCALL my_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("my_read called \n");
-	return status;
-}
-
 NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 	DbgPrint("my_write_direct called \n");
+
+	PCHAR pWriteDataBuffer;
 
 	/*
 	* Each time the IRP is passed down
@@ -122,7 +118,6 @@ NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		goto cleanup;
 	}
 
-	PCHAR pWriteDataBuffer;
 // SPECIALIZED PART
 	pWriteDataBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
 // SPECIALIZED PART END
@@ -141,6 +136,8 @@ NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	}
 
 cleanup:
+	Irp->IoStatus.Status = status;
+	Irp->IoStatus.Information = strlen(pWriteDataBuffer);
 	/*
 	 * /!\MANDATORY after MmGetSystemAddressForMdlSafe/!\
 	 * Tell to the I/O Manager that the driver has finish to work with the IRP
@@ -156,16 +153,16 @@ cleanup:
 
 NTSTATUS STDCALL my_write_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("my_write_buffered called \n");
+	DbgPrint("my_write_buffered called\n");
 
 	PIO_STACK_LOCATION pIoStackIrp = NULL;
 	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+	PCHAR pWriteDataBuffer;
 
 	if(!pIoStackIrp) {
 		goto cleanup;
 	}
 
-	PCHAR pWriteDataBuffer;
 // SPECIALIZED PART
 	pWriteDataBuffer = (PCHAR)Irp->AssociatedIrp.SystemBuffer;
 // SPECIALIZED PART END
@@ -183,6 +180,92 @@ NTSTATUS STDCALL my_write_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	}
 
 cleanup:
+	Irp->IoStatus.Status = status;
+	Irp->IoStatus.Information = strlen(pWriteDataBuffer);
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	return status;
+}
+
+NTSTATUS STDCALL my_read_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS status = STATUS_BUFFER_TOO_SMALL;
+	DbgPrint("my_read_direct called \n");
+
+	PIO_STACK_LOCATION pIoStackIrp = NULL;
+	PCHAR pReturnData = "Hello from the Kernel!";
+	UINT dwDataSize = strlen(pReturnData);
+	UINT dwDataRead = 0;
+	PCHAR pReadDataBuffer;
+	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+
+	if(!pIoStackIrp || !Irp->MdlAddress) {
+		goto cleanup;
+	}
+// SPECIALIZED PART
+	pReadDataBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+// SPECIALIZED PART END
+
+	if(!pReadDataBuffer || pIoStackIrp->Parameters.Read.Length < dwDataSize) {
+		goto cleanup;
+	}
+	/*
+	* We use "RtlCopyMemory" in the kernel instead
+	* of memcpy.
+	* RtlCopyMemory *IS* memcpy, however it's best
+	* to use the
+	* wrapper in case this changes in the future.
+	*/
+	RtlCopyMemory(pReadDataBuffer, pReturnData, dwDataSize);
+	dwDataRead = dwDataSize;
+	status = STATUS_SUCCESS;
+
+cleanup:
+	Irp->IoStatus.Status = status;
+	Irp->IoStatus.Information = dwDataRead;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+	return status;
+}
+
+NTSTATUS STDCALL my_read_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS status = STATUS_BUFFER_TOO_SMALL;
+	DbgPrint("my_read_buffered called \n");
+
+	PIO_STACK_LOCATION pIoStackIrp = NULL;
+	PCHAR pReturnData = "Hello from the Kernel!";
+	UINT dwDataSize = strlen(pReturnData);
+	UINT dwDataRead = 0;
+	PCHAR pReadDataBuffer;
+
+	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+
+	if(!pIoStackIrp) {
+		DbgPrint("No Irp pointer\n");
+		goto cleanup;
+	}
+// SPECIALIZED PART
+	pReadDataBuffer = (PCHAR)Irp->AssociatedIrp.SystemBuffer;
+// SPECIALIZED PART END
+
+	if(!pReadDataBuffer || pIoStackIrp->Parameters.Read.Length < dwDataSize) {
+		DbgPrint("No data buffer || buffer size too small\n");
+		goto cleanup;
+	}
+	/*
+	* We use "RtlCopyMemory" in the kernel instead
+	* of memcpy.
+	* RtlCopyMemory *IS* memcpy, however it's best
+	* to use the
+	* wrapper in case this changes in the future.
+	*/
+	RtlCopyMemory(pReadDataBuffer, pReturnData, dwDataSize);
+	dwDataRead = dwDataSize;
+	status = STATUS_SUCCESS;
+
+cleanup:
+	Irp->IoStatus.Status = status;
+	Irp->IoStatus.Information = dwDataRead;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
 	return status;
 }
 
