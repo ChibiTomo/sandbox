@@ -1,6 +1,7 @@
 #include <ntddk.h>
 #include <windows.h>
-#include <setjmp.h>
+
+#define TYPE_ALIGNMENT(type) offsetof(struct {char x; type t;}, t)
 
 #include "driver.h"
 
@@ -181,66 +182,6 @@ NTSTATUS STDCALL my_write_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	if(isStrNullTerminated(pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length)) {
 		DbgPrint(pWriteDataBuffer);
 	}
-
-cleanup:
-	return status;
-}
-
-jmp_buf g_ex_buf__;
-
-LONG WINAPI my_write_neither_seh(LPEXCEPTION_POINTERS ExceptionInfo) {
-	return EXCEPTION_EXECUTE_HANDLER;
-}
-
-BOOL my_ProbeForRead(PVOID Address, SIZE_T Length, ULONG Alignment) {
-	if (setjmp(g_ex_buf__) == 0) {
-		SetUnhandledExceptionFilter(my_handler);
-		ProbeForRead(Address, Length, Alignment);
-	} else {
-		SetUnhandledExceptionFilter(NULL);
-		return FALSE;
-	}
-	return TRUE;
-};
-
-NTSTATUS STDCALL my_write_neither(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("my_write_neither called \n");
-
-	PIO_STACK_LOCATION pIoStackIrp = NULL;
-	PCHAR pWriteDataBuffer;
-
-	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
-
-	if(!pIoStackIrp) {
-		goto cleanup;
-	}
-
-// SPECIALIZED PART
-	/*
-	* We need this in an exception handler or else we could trap.
-	*/
-		if (!my_ProbeForRead(Irp->UserBuffer,
-							pIoStackIrp->Parameters.Write.Length,
-							TYPE_ALIGNMENT(char)))
-		{
-			status = GetExceptionCode();
-			goto cleanup;
-		}
-		pWriteDataBuffer = Irp->UserBuffer;
-// SPECIALIZED PART END
-
-		if(!pWriteDataBuffer) {
-			goto cleanup;
-		}
-		/*
-		* We need to verify that the string
-		* is NULL terminated. Bad things can happen
-		* if we access memory not valid while in the Kernel.
-		*/
-		if(isStrNullTerminated(pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length)) {
-			DbgPrint(pWriteDataBuffer);
-		}
 
 cleanup:
 	return status;

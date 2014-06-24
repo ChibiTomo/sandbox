@@ -20,16 +20,9 @@ BOOLEAN isStrNullTerminated(PCHAR pString, UINT uiLength);
 #ifdef __USE_DIRECT__
 #define IO_TYPE DO_DIRECT_IO
 #define USE_WRITE_FUNCTION my_write_direct
-#endif // __USE_DIRECT__
-
-#ifdef __USE_BUFFERED__
+#else
 #define IO_TYPE DO_BUFFERED_IO
 #define USE_WRITE_FUNCTION  my_write_buffered
-#endif // __USE_BUFFERED__
-
-#ifndef IO_TYPE
-#define IO_TYPE 0
-#define USE_WRITE_FUNCTION  my_write_neither
-#endif // IO_TYPE
+#endif // __USE_DIRECT__
 
 #endif // DRIVER_H
