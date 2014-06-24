@@ -15,6 +15,10 @@ NTSTATUS STDCALL my_write_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_read_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_read_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
+NTSTATUS STDCALL my_ioctl_direct_out(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten);
+NTSTATUS STDCALL my_ioctl_direct_in(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten);
+NTSTATUS STDCALL my_ioctl_buffered(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten);
+
 BOOLEAN isStrNullTerminated(PCHAR pString, UINT uiLength);
 
 #ifdef __USE_DIRECT__
