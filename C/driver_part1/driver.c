@@ -1,9 +1,10 @@
-#include <ntddk.h>
-
 #include "driver.h"
 
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath) {
 	NTSTATUS status = STATUS_SUCCESS; // default status
+
+	// Setting my_unload as unload function
+	driverObject->DriverUnload = my_unload;
 
 	// Debug print
 	DbgPrint("Hello!!\n");
@@ -45,9 +46,6 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 	driverObject->MajorFunction[IRP_MJ_READ] = USE_READ_FUNCTION;
 	driverObject->MajorFunction[IRP_MJ_WRITE] = USE_WRITE_FUNCTION;
 
-	// Setting my_unload as unload function
-	driverObject->DriverUnload = my_unload;
-
 	deviceObject->Flags |= IO_TYPE;
 	deviceObject->Flags &= (~DO_DEVICE_INITIALIZING);	// DO_DEVICE_INITIALIZING: tell to not send I/O request to
 														// the device. It is MANDATORY to clear it to use the device.
@@ -67,10 +65,11 @@ VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject) {
 	RtlInitUnicodeString(&dosDeviceName, L"\\DosDevices\\Example");
 	IoDeleteSymbolicLink(&dosDeviceName);
 
-	// Remove device
+	// Remove device (If you do not remove the device, you cannot reload it again)
 	PDEVICE_OBJECT device = DriverObject->DeviceObject;
 	if (device != NULL) {
 		IoDeleteDevice(device);
+		DriverObject->DeviceObject = NULL;
 	}
 }
 
@@ -99,22 +98,28 @@ NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	PCHAR pWriteDataBuffer;
 
 	/*
-	* Each time the IRP is passed down
-	* the driver stack a new stack location is added
+	* Each time the IRP is passed down the driver stack,
+	* a new stack location is added
 	* specifying certain parameters for the IRP to the driver.
 	*/
 	PIO_STACK_LOCATION pIoStackIrp = NULL;
 	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 
 	if (!pIoStackIrp) {
+		DbgPrint("Cannot get Irp current stack location.\n");
 		goto cleanup;
 	}
 
 // SPECIALIZED PART
+	if (!Irp->MdlAddress) {
+		DbgPrint("No MdlAddress.\n");
+		goto cleanup;
+	}
 	pWriteDataBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
 // SPECIALIZED PART END
 
 	if (!pWriteDataBuffer) {
+		DbgPrint("Cannot get the data buffer.\n");
 		goto cleanup;
 	}
 
@@ -124,21 +129,25 @@ NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	* if we access memory not valid while in the Kernel.
 	*/
 	if(isStrNullTerminated(pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length)) {
-		DbgPrint(pWriteDataBuffer);
+		DbgPrint("Null terminated: %s\n", pWriteDataBuffer);
 	}
+	DbgPrint("buffer length=%d\n", pIoStackIrp->Parameters.Write.Length);
+	DbgPrint("Buffer content=%.*s\n", pIoStackIrp->Parameters.Write.Length, pWriteDataBuffer);
 
 cleanup:
-	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = strlen(pWriteDataBuffer);
-	/*
-	 * /!\MANDATORY after MmGetSystemAddressForMdlSafe/!\
-	 * Tell to the I/O Manager that the driver has finish to work with the IRP
-	 * Can lead to BSOD if not called
-	 *
-	 * http://msdn.microsoft.com/en-us/library/windows/hardware/ff565381(v=vs.85).aspx
-	**/
-	IoCompleteRequest(	Irp, 				// pointer to the IRP
-						IO_NO_INCREMENT);	// priority, system-defined constant. Check ntddk.h
+	if (Irp) {
+		Irp->IoStatus.Status = status;
+		Irp->IoStatus.Information = pIoStackIrp->Parameters.Write.Length;
+		/*
+		 * /!\MANDATORY after MmGetSystemAddressForMdlSafe/!\
+		 * Tell to the I/O Manager that the driver has finish to work with the IRP
+		 * Can lead to BSOD if not called
+		 *
+		 * http://msdn.microsoft.com/en-us/library/windows/hardware/ff565381(v=vs.85).aspx
+		**/
+		IoCompleteRequest(	Irp, 				// pointer to the IRP
+							IO_NO_INCREMENT);	// priority, system-defined constant. Check ntddk.h
+	}
 
 	return status;
 }
@@ -168,13 +177,15 @@ NTSTATUS STDCALL my_write_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	* if we access memory not valid while in the Kernel.
 	*/
 	if(isStrNullTerminated(pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length)) {
-		DbgPrint(pWriteDataBuffer);
+		DbgPrint("%s\n", pWriteDataBuffer);
 	}
 
 cleanup:
-	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = strlen(pWriteDataBuffer);
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	if (Irp) {
+		Irp->IoStatus.Status = status;
+		Irp->IoStatus.Information = strlen(pWriteDataBuffer);
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	}
 	return status;
 }
 
@@ -184,7 +195,7 @@ NTSTATUS STDCALL my_read_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 	PIO_STACK_LOCATION pIoStackIrp = NULL;
 	PCHAR pReturnData = "Hello from the Kernel!";
-	UINT dwDataSize = strlen(pReturnData);
+	UINT dwDataSize = strlen(pReturnData) + 1;
 	UINT dwDataRead = 0;
 	PCHAR pReadDataBuffer;
 	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
@@ -196,7 +207,8 @@ NTSTATUS STDCALL my_read_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	pReadDataBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
 // SPECIALIZED PART END
 
-	if(!pReadDataBuffer || pIoStackIrp->Parameters.Read.Length < dwDataSize) {
+	DbgPrint("buffer read length: %d\n", pIoStackIrp->Parameters.Read.Length);
+	if(!pReadDataBuffer) {
 		goto cleanup;
 	}
 	/*
@@ -206,8 +218,9 @@ NTSTATUS STDCALL my_read_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	* to use the
 	* wrapper in case this changes in the future.
 	*/
-	RtlCopyMemory(pReadDataBuffer, pReturnData, dwDataSize);
-	dwDataRead = dwDataSize;
+	dwDataRead = (dwDataSize < pIoStackIrp->Parameters.Read.Length)? dwDataSize : pIoStackIrp->Parameters.Read.Length;
+	RtlZeroMemory(pReadDataBuffer, dwDataRead);
+	RtlCopyMemory(pReadDataBuffer, pReturnData, dwDataRead);
 	status = STATUS_SUCCESS;
 
 cleanup:
@@ -272,8 +285,6 @@ BOOLEAN isStrNullTerminated(PCHAR str, UINT length) {
 			i++;
 		}
 	}
-
-	DbgPrint("result=%d\n", result);
 	return result;
 }
 

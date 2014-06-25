@@ -5,19 +5,16 @@
 
 VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject);
 NTSTATUS STDCALL unsuported_function(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS STDCALL my_close(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_create(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL my_close(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_io_control(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // The only difference between those functions is the access method to the data buffer
 NTSTATUS STDCALL my_write_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_write_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
 NTSTATUS STDCALL my_read_direct(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_read_buffered(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-
-NTSTATUS STDCALL my_ioctl_direct_out(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten);
-NTSTATUS STDCALL my_ioctl_direct_in(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten);
-NTSTATUS STDCALL my_ioctl_buffered(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten);
 
 BOOLEAN isStrNullTerminated(PCHAR pString, UINT uiLength);
 

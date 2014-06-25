@@ -22,7 +22,8 @@ int main(void) {
 		goto cleanup;
 	}
 	char* str = "Hello from user mode!\n";
-	funcSuccess = WriteFile(hFile, &str, strlen(str), &dwReturn, NULL); // return TRUE(non zero) on success
+	printf("strlen(str) + 1 = %d\n", strlen(str) + 1);
+	funcSuccess = WriteFile(hFile, str, strlen(str) + 1, &dwReturn, NULL); // return TRUE(non zero) on success
 	if (!funcSuccess) {
 		printf("Write error...\n");
 		goto cleanup;
