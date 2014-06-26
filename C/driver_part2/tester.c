@@ -28,10 +28,11 @@ int main(void) {
 	printf("\n---- Testing Io Control\n");
 
 	memset(buf, BUFFER_SIZE, 0);
+	char* str1 = "** Hello from User Mode Direct OUT I/O";
 	funcSuccess = DeviceIoControl(hFile,
 									IOCTL_DIRECT_OUT_IO,
-									"** Hello from User Mode Direct OUT I/O",
-									sizeof("** Hello from User Mode Direct OUT I/O"),
+									str1,
+									strlen(str1) + 1,
 									buf,
 									BUFFER_SIZE,
 									&dwReturn,
@@ -43,10 +44,11 @@ int main(void) {
 	printf("%.*s\n", dwReturn, buf);
 
 	ZeroMemory(buf, BUFFER_SIZE);
+	char* str2 = "** Hello from User Mode Direct IN I/O";
 	funcSuccess = DeviceIoControl(hFile,
 									IOCTL_DIRECT_IN_IO,
-									"** Hello from User Mode Direct IN I/O",
-									sizeof("** Hello from User Mode Direct IN I/O"),
+									str2,
+									strlen(str2) + 1,
 									buf,
 									BUFFER_SIZE,
 									&dwReturn,
@@ -58,10 +60,11 @@ int main(void) {
 	printf("%.*s\n", dwReturn, buf);
 
 	memset(buf, BUFFER_SIZE, 0);
+	char* str3 = "** Hello from User Mode Buffered I/O";
 	funcSuccess = DeviceIoControl(hFile,
 									IOCTL_BUFFERED_IO,
-									"** Hello from User Mode Buffered I/O",
-									sizeof("** Hello from User Mode Buffered I/O"),
+									str3,
+									strlen(str3) + 1,
 									buf,
 									BUFFER_SIZE,
 									&dwReturn,

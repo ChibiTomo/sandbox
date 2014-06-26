@@ -169,23 +169,12 @@ NTSTATUS STDCALL my_ioctl_direct_out(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, U
 	if(!pInputBuffer || !pOutputBuffer) {
 		goto cleanup;
 	}
-
-	/*
-	* We need to verify that the string
-	* is NULL terminated. Bad things can happen
-	* if we access memory not valid while in the Kernel.
-	*/
 	if(!isStrNullTerminated(pInputBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
 		goto cleanup;
 	}
 	DbgPrint("UserModeMessage: %s\n", pInputBuffer);
 	DbgPrint("%i >= %i\n", pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength, dwDataSize);
 	if(pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength >= dwDataSize) {
-		/*
-		* We use "RtlCopyMemory" in the kernel instead of memcpy.
-		* RtlCopyMemory *IS* memcpy, however it's best to use the
-		* wrapper in case this changes in the future.
-		*/
 		RtlCopyMemory(pOutputBuffer, pReturnData, dwDataSize);
 		*pdwDataWritten = dwDataSize;
 		NtStatus = STATUS_SUCCESS;
@@ -214,27 +203,15 @@ NTSTATUS STDCALL my_ioctl_direct_in(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UI
 	if(Irp->MdlAddress) {
 		pOutputBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
 	}
-
 	if(!pInputBuffer || !pOutputBuffer) {
 		goto cleanup;
 	}
-
-	/*
-	* We need to verify that the string
-	* is NULL terminated. Bad things can happen
-	* if we access memory not valid while in the Kernel.
-	*/
 	if(!isStrNullTerminated(pInputBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
 		goto cleanup;
 	}
 	DbgPrint("UserModeMessage: %s\n", pInputBuffer);
 	DbgPrint("%i >= %i\n", pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength, dwDataSize);
 	if(pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength >= dwDataSize) {
-		/*
-		* We use "RtlCopyMemory" in the kernel instead of memcpy.
-		* RtlCopyMemory *IS* memcpy, however it's best to use the
-		* wrapper in case this changes in the future.
-		*/
 		RtlCopyMemory(pOutputBuffer, pReturnData, dwDataSize);
 		*pdwDataWritten = dwDataSize;
 		NtStatus = STATUS_SUCCESS;
@@ -256,33 +233,12 @@ NTSTATUS STDCALL my_ioctl_buffered(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UIN
 	PCHAR pReturnData = "IOCTL - Buffered I/O From Kernel!";
 	UINT dwDataSize = strlen(pReturnData);
 	DbgPrint("my_ioctl_buffered called \r\n");
-
-	/*
-	* METHOD_BUFFERED
-	*
-	*    Input Buffer = Irp->AssociatedIrp.SystemBuffer
-	*    Ouput Buffer = Irp->AssociatedIrp.SystemBuffer
-	*
-	*    Input Size   =  Parameters.DeviceIoControl.InputBufferLength
-	*    Output Size  =  Parameters.DeviceIoControl.OutputBufferLength
-	*
-	*    Since they both use the same location
-	*    so the "buffer" allocated by the I/O
-	*    manager is the size of the larger value (Output vs. Input)
-	*/
-
-
 	pInputBuffer = Irp->AssociatedIrp.SystemBuffer;
 	pOutputBuffer = Irp->AssociatedIrp.SystemBuffer;
 
 	if(!pInputBuffer || !pOutputBuffer) {
 		goto cleanup;
 	}
-	/*
-	* We need to verify that the string
-	* is NULL terminated. Bad things can happen
-	* if we access memory not valid while in the Kernel.
-	*/
 	if(!isStrNullTerminated(pInputBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
 		goto cleanup;
 	}

@@ -1,0 +1,7 @@
+TARGETNAME = winddk_driver
+TARGETPATH = obj
+TARGETTYPE = DRIVER
+
+INCLUDES   = %BUILD%\inc
+LIBS       = %BUILD%\lib
+SOURCES    = main.c
