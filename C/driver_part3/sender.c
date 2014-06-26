@@ -25,7 +25,7 @@ int _cdecl main(int argc, char **argv)
 	    gets(szTemp);
 	    if(szTemp[0] != 'q' &&  szTemp[0] != 'Q') {
 		    dwReturn = 0;
-			//WriteFile(hFile, szTemp, strlen(szTemp) + 1, &dwReturn, NULL);
+			WriteFile(hFile, szTemp, strlen(szTemp) + 1, &dwReturn, NULL);
 		    printf("%d bytes written\n", dwReturn);
 		}
 	}

@@ -39,7 +39,7 @@ int _cdecl main(int argc, char **argv) {
 		if(szTemp[0] != 'q' &&  szTemp[0] != 'Q') {
 			memset(szTemp, 0, sizeof(szTemp));
 			dwReturn = 0;
-			//ReadFile(hFile, szTemp, sizeof(szTemp), &dwReturn, NULL);
+			ReadFile(hFile, szTemp, sizeof(szTemp), &dwReturn, NULL);
 			printf("%d bytes read\n", dwReturn);
 			printf("'%.*s'\n", dwReturn, szTemp);
 		}

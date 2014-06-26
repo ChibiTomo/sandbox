@@ -97,17 +97,13 @@ NTSTATUS STDCALL my_close(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	DbgPrint("my_close called \n");
 	PIO_STACK_LOCATION pIoStackIrp = NULL;
 
-	DbgPrint("About to IoGetCurrentIrpStackLocation\n");
 	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
-	DbgPrint("IoGetCurrentIrpStackLocation done\n");
 	if (!pIoStackIrp) {
 		DbgPrint("no Irp pointer\n");
 		goto cleanup;
 	}
 
-	DbgPrint("About to realease context\n");
 	status = release_file_context((device_context_t*) DeviceObject->DeviceExtension, pIoStackIrp->FileObject);
-	DbgPrint("Context released\n");
 
 cleanup:
 	Irp->IoStatus.Status = status;
@@ -122,6 +118,7 @@ NTSTATUS STDCALL my_write(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	PIO_STACK_LOCATION pIoStackIrp = NULL;
 	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 	PCHAR pWriteDataBuffer;
+	UINT dwDataWritten = 0;
 
 	if(!pIoStackIrp) {
 		goto cleanup;
@@ -133,11 +130,16 @@ NTSTATUS STDCALL my_write(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		goto cleanup;
 	}
 
-	//DbgPrint(pWriteDataBuffer);
+	if (!my_write_data((file_info_t*) pIoStackIrp->FileObject->FsContext,
+		pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length, &dwDataWritten)) {
+			status = STATUS_UNSUCCESSFUL;
+	}
+
+	DbgPrint("written: %.*s\n", dwDataWritten, pWriteDataBuffer);
 
 cleanup:
 	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = strlen(pWriteDataBuffer);
+	Irp->IoStatus.Information = dwDataWritten;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
 }
@@ -177,12 +179,21 @@ NTSTATUS STDCALL create_file_context(device_context_t* device_context, PFILE_OBJ
 	NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
 	file_info_t* file_info = NULL;
 	BOOLEAN bNeedsToCreate = FALSE;
+	BOOLEAN mutexHeld = FALSE;
 
 	NtStatus = KeWaitForMutexObject(&device_context->mutex, Executive, KernelMode, FALSE, NULL);
-
-	if(!NT_SUCCESS(NtStatus)) {
+	/*
+	 * NT_SUCCESS(NtStatus) return TRUE for:
+	 *	STATUS_SUCCESS
+	 *	STATUS_ALERTED	(mutex NOT held!!!)
+	 *	STATUS_USER_APC	(mutex NOT held!!!)
+	 *	STATUS_TIMEOUT	(mutex NOT held!!!)
+	 */
+	if(NtStatus != STATUS_SUCCESS) {
+		DbgPrint("Mutex not held...");
 		goto cleanup;
 	}
+	mutexHeld = TRUE;
 	file_info = device_context->info_list;
 	bNeedsToCreate = TRUE;
 
@@ -224,9 +235,12 @@ NTSTATUS STDCALL create_file_context(device_context_t* device_context, PFILE_OBJ
 	pFileObject->FsContext = (PVOID)file_info;
 
 	NtStatus = STATUS_SUCCESS;
-	KeReleaseMutex(&device_context->mutex, FALSE);
 
 cleanup:
+	if (mutexHeld) {
+		DbgPrint("Release create context device_context->mutex\n");
+		KeReleaseMutex(&device_context->mutex, FALSE);
+	}
 	return NtStatus;
 }
 
@@ -235,18 +249,26 @@ NTSTATUS STDCALL release_file_context(device_context_t* device_context, PFILE_OB
 	file_info_t* file_info = NULL;
 	file_info_t* irp_file_info = (file_info_t*) pFileObject->FsContext;
 	BOOLEAN bNotFound = TRUE;
-	DbgPrint("release file context\n");
+	BOOLEAN mutexHeld = FALSE;
 
 	NtStatus = KeWaitForMutexObject(&device_context->mutex, Executive, KernelMode, FALSE, NULL);
-	DbgPrint("KeWaitForMutexObject finished\n");
-
-	if(!NT_SUCCESS(NtStatus)) {
+	/*
+	 * NT_SUCCESS(NtStatus) return TRUE for:
+	 *	STATUS_SUCCESS
+	 *	STATUS_ALERTED	(mutex NOT held!!!)
+	 *	STATUS_USER_APC	(mutex NOT held!!!)
+	 *	STATUS_TIMEOUT	(mutex NOT held!!!)
+	 */
+	if(NtStatus != STATUS_SUCCESS) {
+		DbgPrint("Mutex not held...");
 		goto cleanup;
 	}
-	DbgPrint("mutex hold\n");
+	mutexHeld = TRUE;
+
 	file_info = device_context->info_list;
 
 	if(!irp_file_info) {
+		DbgPrint("No irp_file_info...");
 		goto cleanup;
 	}
 	if(file_info == irp_file_info) {
@@ -259,7 +281,6 @@ NTSTATUS STDCALL release_file_context(device_context_t* device_context, PFILE_OB
 			ExFreePool(irp_file_info);
 		}
 	} else {
-		DbgPrint("looking for correct context\n");
 		while(file_info && bNotFound == TRUE) {
 			if(irp_file_info == file_info->next) {
 				bNotFound = FALSE;
@@ -276,16 +297,14 @@ NTSTATUS STDCALL release_file_context(device_context_t* device_context, PFILE_OB
 		}
 	}
 
-	DbgPrint("bNotFound? %d\n", bNotFound);
 	if(bNotFound) {
 		NtStatus = STATUS_UNSUCCESSFUL; /* Should Never Reach Here!!!!! */
 	}
-
-	KeReleaseMutex(&device_context->mutex, FALSE);
-	DbgPrint("KeReleaseMutex finished\n");
 cleanup:
-	DbgPrint("Success=%d\n", STATUS_SUCCESS);
-	DbgPrint("status=%d\n", NtStatus);
+	if (mutexHeld) {
+		DbgPrint("Release release context device_context->mutex\n");
+		KeReleaseMutex(&device_context->mutex, FALSE);
+	}
 	return NtStatus;
 }
 
@@ -293,12 +312,13 @@ BOOLEAN STDCALL my_read_data(file_info_t* file_info, PCHAR data, UINT length, UI
 	BOOLEAN bDataRead = FALSE;
 	NTSTATUS NtStatus;
 	*str_length = 0;
+	BOOLEAN mutexHeld = FALSE;
 
 	NtStatus = KeWaitForMutexObject(&file_info->mutex, Executive, KernelMode, FALSE, NULL);
-
 	if(!NT_SUCCESS(NtStatus)) {
 		goto cleanup;
 	}
+	mutexHeld = TRUE;
 
 	DbgPrint("Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
 				file_info->start_index,
@@ -364,9 +384,11 @@ BOOLEAN STDCALL my_read_data(file_info_t* file_info, PCHAR data, UINT length, UI
 					file_info->end_index,
 					sizeof(file_info->circular_buffer));
 
-	KeReleaseMutex(&file_info->mutex, FALSE);
-
 cleanup:
+	if (mutexHeld) {
+		DbgPrint("Release read file_info->mutex\n");
+		KeReleaseMutex(&file_info->mutex, FALSE);
+	}
 	return bDataRead;
 }
 
@@ -374,12 +396,22 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 	BOOLEAN bDataWritten = FALSE;
 	NTSTATUS NtStatus;
 	*str_length = 0;
+	BOOLEAN mutexHeld = FALSE;
 
 	NtStatus = KeWaitForMutexObject(&file_info->mutex, Executive, KernelMode, FALSE, NULL);
-
-	if(!NT_SUCCESS(NtStatus)) {
+	/*
+	 * NT_SUCCESS(NtStatus) return TRUE for:
+	 *	STATUS_SUCCESS
+	 *	STATUS_ALERTED	(mutex NOT held!!!)
+	 *	STATUS_USER_APC	(mutex NOT held!!!)
+	 *	STATUS_TIMEOUT	(mutex NOT held!!!)
+	 */
+	if(NtStatus != STATUS_SUCCESS) {
+		DbgPrint("Mutex not held...");
 		goto cleanup;
 	}
+	mutexHeld = TRUE;
+
 	DbgPrint("Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
 					file_info->start_index,
 					file_info->end_index,
@@ -406,6 +438,7 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 		UINT uiCopyLength;
 
 		if(file_info->start_index > file_info->end_index) {
+			DbgPrint("Error in circular buffer construction...\n");
 			goto cleanup;
 		}
 
@@ -421,6 +454,7 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 						uiCopyLength, uiLinearLengthAvailable, length);
 
 		if(!uiCopyLength) {
+			DbgPrint("Nothing to copy\n");
 			goto cleanup;
 		}
 		RtlCopyMemory(file_info->circular_buffer + file_info->end_index, data, uiCopyLength);
@@ -430,7 +464,8 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 
 		bDataWritten = TRUE;
 
-		if(file_info->end_index != sizeof(file_info->circular_buffer)) {
+		if(file_info->end_index < sizeof(file_info->circular_buffer)) {
+			DbgPrint("Not the end of the buffer\n");
 			goto cleanup;
 		}
 		file_info->end_index = 0;
@@ -438,6 +473,7 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 		DbgPrint("file_info->end_index = 0 %i - %i = %i\n", length , uiCopyLength, (length - uiCopyLength));
 
 		if(length < uiCopyLength) {
+			DbgPrint("Buffer too small\n");
 			goto cleanup;
 		}
 		UINT uiSecondCopyLength = MIN(file_info->start_index - (file_info->end_index + 1),
@@ -460,8 +496,10 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 					file_info->end_index,
 					sizeof(file_info->circular_buffer));
 
-	KeReleaseMutex(&file_info->mutex, FALSE);
-
 cleanup:
+	if (mutexHeld) {
+		DbgPrint("Release write file_info->mutex\n");
+		KeReleaseMutex(&file_info->mutex, FALSE);
+	}
 	return bDataWritten;
 }
