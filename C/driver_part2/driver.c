@@ -122,16 +122,16 @@ NTSTATUS STDCALL my_io_control(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		goto cleanup;
 	}
 
-	switch(pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
-		case IOCTL_DIRECT_IN_IO:
+	switch (pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
+		case MY_IOCTL_DIRECT_IN_IO:
 			NtStatus = my_ioctl_direct_in(Irp, pIoStackIrp, &dwDataWritten);
 			break;
 
-		case IOCTL_DIRECT_OUT_IO:
+		case MY_IOCTL_DIRECT_OUT_IO:
 			NtStatus = my_ioctl_direct_out(Irp, pIoStackIrp, &dwDataWritten);
 			break;
 
-		case IOCTL_BUFFERED_IO:
+		case MY_IOCTL_BUFFERED_IO:
 			NtStatus = my_ioctl_buffered(Irp, pIoStackIrp, &dwDataWritten);
 			break;
 
@@ -149,37 +149,48 @@ cleanup:
 	return NtStatus;
 }
 
-NTSTATUS STDCALL my_ioctl_direct_out(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten) {
-	NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
-	PCHAR pInputBuffer;
-	PCHAR pOutputBuffer;
-	UINT dwDataRead = 0;
-	UINT dwDataWritten = 0;
-	PCHAR pReturnData = "IOCTL - Direct Out I/O From Kernel!";
-	UINT dwDataSize = strlen(pReturnData);
+NTSTATUS my_ioctl_direct_out(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten) {
+	NTSTATUS NtStatus = STATUS_SUCCESS;
+
 	DbgPrint("my_ioctl_direct_out Called \n");
 
-	pInputBuffer = Irp->AssociatedIrp.SystemBuffer;
-	pOutputBuffer = NULL;
+	PCHAR pInputBuffer = Irp->AssociatedIrp.SystemBuffer;
+	if (!pInputBuffer) {
+		DbgPrint("No input buffer.\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
 
-	if(Irp->MdlAddress) {
+	PCHAR pOutputBuffer = NULL;
+	if (Irp->MdlAddress) {
 		pOutputBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
 	}
 
-	if(!pInputBuffer || !pOutputBuffer) {
+	if (!pOutputBuffer) {
+		DbgPrint("No output buffer.\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
 		goto cleanup;
 	}
-	if(!isStrNullTerminated(pInputBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
+	DbgPrint("pOutputBuffer: %s\n", pOutputBuffer);
+
+	if (!isStrNullTerminated(pInputBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
+		DbgPrint("Not null terminated string.\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
 		goto cleanup;
 	}
 	DbgPrint("UserModeMessage: %s\n", pInputBuffer);
-	DbgPrint("%i >= %i\n", pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength, dwDataSize);
-	if(pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength >= dwDataSize) {
-		RtlCopyMemory(pOutputBuffer, pReturnData, dwDataSize);
-		*pdwDataWritten = dwDataSize;
-		NtStatus = STATUS_SUCCESS;
+
+	PCHAR pReturnData = "IOCTL - Direct Out I/O From Kernel!";
+	UINT dwDataSize = strlen(pReturnData) + 1;
+	UINT returnDataSize = dwDataSize + strlen(pOutputBuffer);
+
+	DbgPrint("%i >= %i?\n", pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength, returnDataSize);
+	if(pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength >= returnDataSize) {
+		RtlCopyMemory(pOutputBuffer + strlen(pOutputBuffer), pReturnData, dwDataSize);
+
+		*pdwDataWritten = returnDataSize;
 	} else {
-		*pdwDataWritten = dwDataSize;
+		*pdwDataWritten = 0;
 		NtStatus = STATUS_BUFFER_TOO_SMALL;
 	}
 
@@ -187,36 +198,48 @@ cleanup:
 	return NtStatus;
 }
 
-NTSTATUS STDCALL my_ioctl_direct_in(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten) {
-	NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
-	PCHAR pInputBuffer;
-	PCHAR pOutputBuffer;
-	UINT dwDataRead = 0;
-	UINT dwDataWritten = 0;
+NTSTATUS my_ioctl_direct_in(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten) {
+	NTSTATUS NtStatus = STATUS_SUCCESS;
+
+	DbgPrint("my_ioctl_direct_out Called \n");
+
+	PCHAR pInputBuffer = Irp->AssociatedIrp.SystemBuffer;
+	if (!pInputBuffer) {
+		DbgPrint("No input buffer.\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
+
+	PCHAR pOutputBuffer = NULL;
+	if (Irp->MdlAddress) {
+		pOutputBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+	}
+
+	if (!pOutputBuffer) {
+		DbgPrint("No output buffer.\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
+	DbgPrint("pOutputBuffer: %s\n", pOutputBuffer);
+
+	if (!isStrNullTerminated(pInputBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
+		DbgPrint("Not null terminated string.\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
+	DbgPrint("UserModeMessage: %s\n", pInputBuffer);
+
 	PCHAR pReturnData = "IOCTL - Direct In I/O From Kernel!";
-	UINT dwDataSize = strlen(pReturnData);
-	DbgPrint("my_ioctl_direct_in Called \n");
+	UINT dwDataSize = strlen(pReturnData) + 1;
+	UINT returnDataSize = dwDataSize + strlen(pOutputBuffer);
 
-	pInputBuffer = Irp->AssociatedIrp.SystemBuffer;
-	pOutputBuffer = NULL;
+	DbgPrint("%i >= %i?\n", pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength, returnDataSize);
+	if(pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength >= returnDataSize) {
+		RtlCopyMemory(pOutputBuffer + strlen(pOutputBuffer), pReturnData, dwDataSize);
 
-	if(Irp->MdlAddress) {
-		pOutputBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
-	}
-	if(!pInputBuffer || !pOutputBuffer) {
-		goto cleanup;
-	}
-	if(!isStrNullTerminated(pInputBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
-		goto cleanup;
-	}
-	DbgPrint("UserModeMessage: %s\n", pInputBuffer);
-	DbgPrint("%i >= %i\n", pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength, dwDataSize);
-	if(pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength >= dwDataSize) {
-		RtlCopyMemory(pOutputBuffer, pReturnData, dwDataSize);
-		*pdwDataWritten = dwDataSize;
-		NtStatus = STATUS_SUCCESS;
+		*pdwDataWritten = returnDataSize;
 	} else {
-		*pdwDataWritten = dwDataSize;
+		*pdwDataWritten = 0;
 		NtStatus = STATUS_BUFFER_TOO_SMALL;
 	}
 
@@ -224,32 +247,34 @@ cleanup:
 	return NtStatus;
 }
 
-NTSTATUS STDCALL my_ioctl_buffered(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten) {
-	NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
-	PCHAR pInputBuffer;
-	PCHAR pOutputBuffer;
-	UINT dwDataRead = 0;
-	UINT dwDataWritten = 0;
-	PCHAR pReturnData = "IOCTL - Buffered I/O From Kernel!";
-	UINT dwDataSize = strlen(pReturnData);
-	DbgPrint("my_ioctl_buffered called \r\n");
-	pInputBuffer = Irp->AssociatedIrp.SystemBuffer;
-	pOutputBuffer = Irp->AssociatedIrp.SystemBuffer;
+NTSTATUS my_ioctl_buffered(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT *pdwDataWritten) {
+	NTSTATUS NtStatus = STATUS_SUCCESS;
 
-	if(!pInputBuffer || !pOutputBuffer) {
+	DbgPrint("my_ioctl_buffered called \r\n");
+
+	PCHAR buffer = Irp->AssociatedIrp.SystemBuffer;
+
+	if(!buffer) {
+		DbgPrint("No buffer.\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
 		goto cleanup;
 	}
-	if(!isStrNullTerminated(pInputBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
+	if(!isStrNullTerminated(buffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength)) {
+		DbgPrint("Not null terminated string.\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
 		goto cleanup;
 	}
-	DbgPrint("UserModeMessage = %s\n", pInputBuffer);
+	DbgPrint("UserModeMessage = %s\n", buffer);
+
+	PCHAR pReturnData = "IOCTL - Buffered I/O From Kernel!";
+	UINT dwDataSize = strlen(pReturnData) + 1;
+
 	DbgPrint("%i >= %i\n", pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength, dwDataSize);
 	if(pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength >= dwDataSize) {
-		RtlCopyMemory(pOutputBuffer, pReturnData, dwDataSize);
+		RtlCopyMemory(buffer, pReturnData, dwDataSize);
 		*pdwDataWritten = dwDataSize;
-		NtStatus = STATUS_SUCCESS;
 	} else {
-		*pdwDataWritten = dwDataSize;
+		*pdwDataWritten = 0;
 		NtStatus = STATUS_BUFFER_TOO_SMALL;
 	}
 
