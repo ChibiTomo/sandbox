@@ -14,7 +14,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 
 	PDEVICE_OBJECT deviceObject = NULL;
 	status = IoCreateDevice(driverObject,
-							sizeof(filter_device_context),
+							sizeof(filter_device_context_t),
 							NULL,
 							FILE_DEVICE_UNKNOWN,
 							FILE_DEVICE_SECURE_OPEN,
@@ -31,7 +31,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 		driverObject->MajorFunction[i] = unsuported_function;
 	}
 
-	filter_device_context* context = (filter_device_context*) deviceObject->DeviceExtension;
+	filter_device_context_t* context = (filter_device_context_t*) deviceObject->DeviceExtension;
 
 	UNICODE_STRING filteredDeviceName;
 	RtlInitUnicodeString(&filteredDeviceName, DEVICE_PATH);
@@ -42,6 +42,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 		IoDeleteDevice(deviceObject);
 		goto cleanup;
 	}
+	DbgPrint("Attached to: %wZ\n", &filteredDeviceName);
 
 	PDEVICE_OBJECT filteredDevice = NULL;
 	filteredDevice = context->nextDeviceInChain;
@@ -58,7 +59,7 @@ cleanup:
 VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject) {
 	DbgPrint("GoodBye!!\n");
 
-	filter_device_context* context = (filter_device_context*) DriverObject->DeviceObject->DeviceExtension;
+	filter_device_context_t* context = (filter_device_context_t*) DriverObject->DeviceObject->DeviceExtension;
 	if (context->nextDeviceInChain) {
 		IoDetachDevice(context->nextDeviceInChain);
 	}
@@ -71,6 +72,9 @@ VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject) {
 
 NTSTATUS STDCALL unsuported_function(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_NOT_SUPPORTED;
-	DbgPrint("unsuported_function called \n");
+
+	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+	DbgPrint("unsuported_function called: 0x%02X\n", pIoStackIrp->MajorFunction);
+
 	return status;
 }

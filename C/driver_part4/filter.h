@@ -4,4 +4,4 @@ NTSTATUS STDCALL unsuported_function(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 typedef struct {
 	PDEVICE_OBJECT nextDeviceInChain;
-} filter_device_context;
+} filter_device_context_t;
