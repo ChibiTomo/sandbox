@@ -320,7 +320,7 @@ BOOLEAN STDCALL my_read_data(file_info_t* file_info, PCHAR data, UINT length, UI
 	}
 	mutexHeld = TRUE;
 
-	DbgPrint("Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
+	DbgPrint("Before: Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
 				file_info->start_index,
 				file_info->end_index,
 				sizeof(file_info->circular_buffer));
@@ -379,12 +379,11 @@ BOOLEAN STDCALL my_read_data(file_info_t* file_info, PCHAR data, UINT length, UI
 		}
 	}
 
-	DbgPrint("Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
+cleanup:
+	DbgPrint("After: Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
 					file_info->start_index,
 					file_info->end_index,
 					sizeof(file_info->circular_buffer));
-
-cleanup:
 	if (mutexHeld) {
 		DbgPrint("Release read file_info->mutex\n");
 		KeReleaseMutex(&file_info->mutex, FALSE);
@@ -411,12 +410,10 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 		goto cleanup;
 	}
 	mutexHeld = TRUE;
-
-	DbgPrint("Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
+	DbgPrint("Before: Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
 					file_info->start_index,
 					file_info->end_index,
 					sizeof(file_info->circular_buffer));
-	DbgPrint("Example_WriteData = %i > %i\n", file_info->start_index, (file_info->end_index + 1));
 	if(file_info->start_index > (file_info->end_index + 1)) {
 		UINT uiCopyLength = MIN((file_info->start_index - (file_info->end_index + 1)), length);
 
@@ -460,7 +457,7 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 		RtlCopyMemory(file_info->circular_buffer + file_info->end_index, data, uiCopyLength);
 
 		file_info->end_index += uiCopyLength;
-		*str_length =  uiCopyLength;
+		*str_length = uiCopyLength;
 
 		bDataWritten = TRUE;
 
@@ -491,12 +488,11 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 		}
 	}
 
-	DbgPrint("Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
+cleanup:
+	DbgPrint("After: Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
 					file_info->start_index,
 					file_info->end_index,
 					sizeof(file_info->circular_buffer));
-
-cleanup:
 	if (mutexHeld) {
 		DbgPrint("Release write file_info->mutex\n");
 		KeReleaseMutex(&file_info->mutex, FALSE);
