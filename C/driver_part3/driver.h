@@ -1,7 +1,7 @@
 #include <ddk/ntddk.h>
 
 #define POOL_TAG ' pxE'
-#define CIRCULAR_BUFFER_SIZE 2048
+#define CIRCULAR_BUFFER_SIZE 16
 
 typedef struct _file_info_t{
 	struct _file_info_t* next;
@@ -32,4 +32,4 @@ NTSTATUS STDCALL create_file_context(device_context_t* device_context, PFILE_OBJ
 NTSTATUS STDCALL release_file_context(device_context_t* device_context, PFILE_OBJECT pFileObject);
 
 BOOLEAN STDCALL my_read_data(file_info_t* file_info, PCHAR data, UINT length, UINT *str_length);
-BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, UINT *str_length);
+NTSTATUS STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, UINT *str_length);

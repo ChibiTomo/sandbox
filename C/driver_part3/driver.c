@@ -6,17 +6,16 @@
 
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath) {
 	NTSTATUS status = STATUS_SUCCESS; // default status
+	PDEVICE_OBJECT deviceObject = NULL;
 
 	driverObject->DriverUnload = my_unload;
 
-	DbgPrint("Hello!!\n");
 	DbgPrint("RegistryPath=%wZ\n", registryPath);
 
 	// Creation of the associated device
-	PDEVICE_OBJECT deviceObject = NULL;
 	UNICODE_STRING deviceName;
-	UNICODE_STRING dosDeviceName;
 	RtlInitUnicodeString(&deviceName, L"\\Device\\YTDevice");
+	UNICODE_STRING dosDeviceName;
 	RtlInitUnicodeString(&dosDeviceName, L"\\DosDevices\\YTDevice");
 
 	status = IoCreateDevice(driverObject,
@@ -28,7 +27,6 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 							&deviceObject);
 
 	if (status != STATUS_SUCCESS) {
-		IoDeleteDevice(deviceObject);
 		goto cleanup;
 	}
 
@@ -50,11 +48,16 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 	IoCreateSymbolicLink(&dosDeviceName, &deviceName);
 
 cleanup:
+	if (status != STATUS_SUCCESS) {
+		if (deviceObject) {
+			IoDeleteDevice(deviceObject);
+		}
+	}
 	return status;
 }
 
 VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject) {
-	DbgPrint("GoodBye!!\n");
+	DbgPrint("Start to unload.\n");
 
 	// Remove SymLinks
 	UNICODE_STRING dosDeviceName;
@@ -70,23 +73,32 @@ VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject) {
 
 NTSTATUS STDCALL unsuported_function(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_NOT_SUPPORTED;
-	DbgPrint("unsuported_function called \n");
+
+	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+	if (!pIoStackIrp) {
+		DbgPrint("unsuported_function called with invalid Irp.\n");
+		goto cleanup;
+	}
+	DbgPrint("unsuported_function called: 0x%02X\n", pIoStackIrp->MajorFunction);
+cleanup:
 	return status;
 }
 
 NTSTATUS STDCALL my_create(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("my_create called \n");
-	PIO_STACK_LOCATION pIoStackIrp = NULL;
 
-	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+	DbgPrint("my_create called\n");
+	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 	if (!pIoStackIrp) {
+		DbgPrint("no Irp pointer\n");
 		goto cleanup;
 	}
 
 	status = create_file_context((device_context_t*) DeviceObject->DeviceExtension, pIoStackIrp->FileObject);
 
 cleanup:
+	// The Irp must be completed to not be passed to other drivers in the stack.
+	// The last driver to process the Irp must call IoCompleteRequest
 	Irp->IoStatus.Status = status;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
@@ -94,10 +106,9 @@ cleanup:
 
 NTSTATUS STDCALL my_close(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("my_close called \n");
-	PIO_STACK_LOCATION pIoStackIrp = NULL;
 
-	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+	DbgPrint("my_close called\n");
+	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 	if (!pIoStackIrp) {
 		DbgPrint("no Irp pointer\n");
 		goto cleanup;
@@ -113,26 +124,26 @@ cleanup:
 
 NTSTATUS STDCALL my_write(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("my_write called\n");
-
-	PIO_STACK_LOCATION pIoStackIrp = NULL;
-	pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
-	PCHAR pWriteDataBuffer;
 	UINT dwDataWritten = 0;
 
+	DbgPrint("my_write called\n");
+	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 	if(!pIoStackIrp) {
+		DbgPrint("no Irp pointer\n");
 		goto cleanup;
 	}
 
-	pWriteDataBuffer = (PCHAR)Irp->AssociatedIrp.SystemBuffer;
-
+	PCHAR pWriteDataBuffer = (PCHAR)Irp->AssociatedIrp.SystemBuffer;
 	if(!pWriteDataBuffer) {
+		DbgPrint("no system buffer\n");
 		goto cleanup;
 	}
 
-	if (!my_write_data((file_info_t*) pIoStackIrp->FileObject->FsContext,
-		pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length, &dwDataWritten)) {
-			status = STATUS_UNSUCCESSFUL;
+	status = my_write_data((file_info_t*) pIoStackIrp->FileObject->FsContext,
+				pWriteDataBuffer, pIoStackIrp->Parameters.Write.Length, &dwDataWritten);
+	if(status != STATUS_SUCCESS) {
+		DbgPrint("my_write_data failed.\n");
+		goto cleanup;
 	}
 
 	DbgPrint("written: %.*s\n", dwDataWritten, pWriteDataBuffer);
@@ -145,7 +156,7 @@ cleanup:
 }
 
 NTSTATUS STDCALL my_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	NTSTATUS NtStatus = STATUS_BUFFER_TOO_SMALL;
+	NTSTATUS status = STATUS_BUFFER_TOO_SMALL;
 	PIO_STACK_LOCATION pIoStackIrp = NULL;
 	UINT dwDataRead = 0;
 	PCHAR pReadDataBuffer;
@@ -164,32 +175,32 @@ NTSTATUS STDCALL my_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	}
 
 	if(my_read_data((file_info_t*) pIoStackIrp->FileObject->FsContext, pReadDataBuffer, pIoStackIrp->Parameters.Read.Length, &dwDataRead)) {
-		NtStatus = STATUS_SUCCESS;
+		status = STATUS_SUCCESS;
 	}
 
 cleanup:
-	Irp->IoStatus.Status = NtStatus;
+	Irp->IoStatus.Status = status;
 	Irp->IoStatus.Information = dwDataRead;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-	return NtStatus;
+	return status;
 }
 
 NTSTATUS STDCALL create_file_context(device_context_t* device_context, PFILE_OBJECT pFileObject) {
-	NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	file_info_t* file_info = NULL;
 	BOOLEAN bNeedsToCreate = FALSE;
 	BOOLEAN mutexHeld = FALSE;
 
-	NtStatus = KeWaitForMutexObject(&device_context->mutex, Executive, KernelMode, FALSE, NULL);
+	status = KeWaitForMutexObject(&device_context->mutex, Executive, KernelMode, FALSE, NULL);
 	/*
-	 * NT_SUCCESS(NtStatus) return TRUE for:
+	 * NT_SUCCESS(status) return TRUE for:
 	 *	STATUS_SUCCESS
 	 *	STATUS_ALERTED	(mutex NOT held!!!)
 	 *	STATUS_USER_APC	(mutex NOT held!!!)
 	 *	STATUS_TIMEOUT	(mutex NOT held!!!)
 	 */
-	if(NtStatus != STATUS_SUCCESS) {
+	if(status != STATUS_SUCCESS) {
 		DbgPrint("Mutex not held...");
 		goto cleanup;
 	}
@@ -203,7 +214,7 @@ NTSTATUS STDCALL create_file_context(device_context_t* device_context, PFILE_OBJ
 			file_info->ref_count++;
 			pFileObject->FsContext = (PVOID)file_info;
 
-			NtStatus = STATUS_SUCCESS;
+			status = STATUS_SUCCESS;
 		} else {
 			file_info = file_info->next;
 		}
@@ -215,7 +226,7 @@ NTSTATUS STDCALL create_file_context(device_context_t* device_context, PFILE_OBJ
 	file_info = (file_info_t*)ExAllocatePoolWithTag(NonPagedPool, sizeof(file_info_t), POOL_TAG);
 
 	if(!file_info) {
-		NtStatus = STATUS_INSUFFICIENT_RESOURCES;
+		status = STATUS_INSUFFICIENT_RESOURCES;
 		goto cleanup;
 	}
 	file_info->next = device_context->info_list;
@@ -234,32 +245,32 @@ NTSTATUS STDCALL create_file_context(device_context_t* device_context, PFILE_OBJ
 
 	pFileObject->FsContext = (PVOID)file_info;
 
-	NtStatus = STATUS_SUCCESS;
+	status = STATUS_SUCCESS;
 
 cleanup:
 	if (mutexHeld) {
 		DbgPrint("Release create context device_context->mutex\n");
 		KeReleaseMutex(&device_context->mutex, FALSE);
 	}
-	return NtStatus;
+	return status;
 }
 
 NTSTATUS STDCALL release_file_context(device_context_t* device_context, PFILE_OBJECT pFileObject) {
-	NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
 	file_info_t* file_info = NULL;
 	file_info_t* irp_file_info = (file_info_t*) pFileObject->FsContext;
 	BOOLEAN bNotFound = TRUE;
 	BOOLEAN mutexHeld = FALSE;
 
-	NtStatus = KeWaitForMutexObject(&device_context->mutex, Executive, KernelMode, FALSE, NULL);
+	status = KeWaitForMutexObject(&device_context->mutex, Executive, KernelMode, FALSE, NULL);
 	/*
-	 * NT_SUCCESS(NtStatus) return TRUE for:
+	 * NT_SUCCESS(status) return TRUE for:
 	 *	STATUS_SUCCESS
 	 *	STATUS_ALERTED	(mutex NOT held!!!)
 	 *	STATUS_USER_APC	(mutex NOT held!!!)
 	 *	STATUS_TIMEOUT	(mutex NOT held!!!)
 	 */
-	if(NtStatus != STATUS_SUCCESS) {
+	if(status != STATUS_SUCCESS) {
 		DbgPrint("Mutex not held...");
 		goto cleanup;
 	}
@@ -273,7 +284,7 @@ NTSTATUS STDCALL release_file_context(device_context_t* device_context, PFILE_OB
 	}
 	if(file_info == irp_file_info) {
 		bNotFound = FALSE;
-		NtStatus = STATUS_SUCCESS;
+		status = STATUS_SUCCESS;
 		irp_file_info->ref_count--;
 
 		if(irp_file_info->ref_count == 0) {
@@ -284,7 +295,7 @@ NTSTATUS STDCALL release_file_context(device_context_t* device_context, PFILE_OB
 		while(file_info && bNotFound == TRUE) {
 			if(irp_file_info == file_info->next) {
 				bNotFound = FALSE;
-				NtStatus = STATUS_SUCCESS;
+				status = STATUS_SUCCESS;
 				irp_file_info->ref_count--;
 
 				if(irp_file_info->ref_count == 0) {
@@ -298,24 +309,24 @@ NTSTATUS STDCALL release_file_context(device_context_t* device_context, PFILE_OB
 	}
 
 	if(bNotFound) {
-		NtStatus = STATUS_UNSUCCESSFUL; /* Should Never Reach Here!!!!! */
+		status = STATUS_UNSUCCESSFUL; /* Should Never Reach Here!!!!! */
 	}
 cleanup:
 	if (mutexHeld) {
 		DbgPrint("Release release context device_context->mutex\n");
 		KeReleaseMutex(&device_context->mutex, FALSE);
 	}
-	return NtStatus;
+	return status;
 }
 
 BOOLEAN STDCALL my_read_data(file_info_t* file_info, PCHAR data, UINT length, UINT *str_length) {
 	BOOLEAN bDataRead = FALSE;
-	NTSTATUS NtStatus;
+	NTSTATUS status;
 	*str_length = 0;
 	BOOLEAN mutexHeld = FALSE;
 
-	NtStatus = KeWaitForMutexObject(&file_info->mutex, Executive, KernelMode, FALSE, NULL);
-	if(!NT_SUCCESS(NtStatus)) {
+	status = KeWaitForMutexObject(&file_info->mutex, Executive, KernelMode, FALSE, NULL);
+	if(!NT_SUCCESS(status)) {
 		goto cleanup;
 	}
 	mutexHeld = TRUE;
@@ -391,67 +402,52 @@ cleanup:
 	return bDataRead;
 }
 
-BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, UINT *str_length) {
-	BOOLEAN bDataWritten = FALSE;
-	NTSTATUS NtStatus;
-	*str_length = 0;
+NTSTATUS STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, UINT *str_length) {
+	NTSTATUS status = STATUS_SUCCESS;
 	BOOLEAN mutexHeld = FALSE;
 
-	NtStatus = KeWaitForMutexObject(&file_info->mutex, Executive, KernelMode, FALSE, NULL);
+	*str_length = 0;
+
+	status = KeWaitForMutexObject(&file_info->mutex, Executive, KernelMode, FALSE, NULL);
 	/*
-	 * NT_SUCCESS(NtStatus) return TRUE for:
+	 * NT_SUCCESS(status) return TRUE for:
 	 *	STATUS_SUCCESS
 	 *	STATUS_ALERTED	(mutex NOT held!!!)
 	 *	STATUS_USER_APC	(mutex NOT held!!!)
 	 *	STATUS_TIMEOUT	(mutex NOT held!!!)
 	 */
-	if(NtStatus != STATUS_SUCCESS) {
-		DbgPrint("Mutex not held...");
+	if (status != STATUS_SUCCESS) {
+		DbgPrint("Problem with file_info mutex...\n");
 		goto cleanup;
 	}
 	mutexHeld = TRUE;
-	DbgPrint("Before: Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
+	DbgPrint("Before: Start Index = %d Stop Index = %d Size Of Buffer = %d\n",
 					file_info->start_index,
 					file_info->end_index,
 					sizeof(file_info->circular_buffer));
+
 	if(file_info->start_index > (file_info->end_index + 1)) {
+		/*
+		 * To copy the buffer created in user mode to the kernel buffer we need to determine
+		 * where the circular buffer pointers are.
+		 *
+		 *  [*****              ************************]
+		 *     Stop           Start
+		 *
+		 * If the Start index is farther than the Stop index then we can assume that memory from the Start to the
+		 * index (including wrapping).  So Start - (Stop + 1) = Valid Length.  We want to add 1 to the Stop index
+		 * so that we do not get Start == Stop since this is reserved for empty buffer.
+		 *
+		 */
 		UINT uiCopyLength = MIN((file_info->start_index - (file_info->end_index + 1)), length);
 
-		DbgPrint("uiCopyLength = %i (%i, %i)\n",
+		DbgPrint("uiCopyLength = %i [ = MIN(%i, %i)]\n",
 						uiCopyLength,
 						(file_info->start_index - (file_info->end_index + 1)),
 						length);
 
-		if(uiCopyLength) {
-			RtlCopyMemory(file_info->circular_buffer + file_info->end_index, data, uiCopyLength);
-
-			file_info->end_index += uiCopyLength;
-			*str_length =  uiCopyLength;
-
-			bDataWritten = TRUE;
-		}
-	} else {
-		UINT uiLinearLengthAvailable;
-		UINT uiCopyLength;
-
-		if(file_info->start_index > file_info->end_index) {
-			DbgPrint("Error in circular buffer construction...\n");
-			goto cleanup;
-		}
-
-		if(file_info->start_index == 0) {
-			uiLinearLengthAvailable = sizeof(file_info->circular_buffer) - (file_info->end_index + 1);
-		} else {
-			uiLinearLengthAvailable = sizeof(file_info->circular_buffer) - file_info->end_index;
-		}
-
-		uiCopyLength = MIN(uiLinearLengthAvailable, length);
-
-		DbgPrint("uiCopyLength %i = MIN(uiLinearLengthAvailable %i, uiLength %i)\n",
-						uiCopyLength, uiLinearLengthAvailable, length);
-
-		if(!uiCopyLength) {
-			DbgPrint("Nothing to copy\n");
+		if (uiCopyLength == 0) {
+			DbgPrint("Nothing to copy.\n");
 			goto cleanup;
 		}
 		RtlCopyMemory(file_info->circular_buffer + file_info->end_index, data, uiCopyLength);
@@ -459,37 +455,63 @@ BOOLEAN STDCALL my_write_data(file_info_t* file_info, PCHAR data, UINT length, U
 		file_info->end_index += uiCopyLength;
 		*str_length = uiCopyLength;
 
-		bDataWritten = TRUE;
-
-		if(file_info->end_index < sizeof(file_info->circular_buffer)) {
-			DbgPrint("Not the end of the buffer\n");
-			goto cleanup;
-		}
-		file_info->end_index = 0;
-
-		DbgPrint("file_info->end_index = 0 %i - %i = %i\n", length , uiCopyLength, (length - uiCopyLength));
-
-		if(length < uiCopyLength) {
-			DbgPrint("Buffer too small\n");
-			goto cleanup;
-		}
-		UINT uiSecondCopyLength = MIN(file_info->start_index - (file_info->end_index + 1),
-						length - uiCopyLength);
-
-		DbgPrint("uiSecondCopyLength = 0 %i\n", uiSecondCopyLength);
-
-		if(uiSecondCopyLength) {
-			RtlCopyMemory(file_info->circular_buffer + file_info->end_index, data, uiSecondCopyLength);
-
-			file_info->end_index += uiSecondCopyLength;
-			*str_length =  uiCopyLength + uiSecondCopyLength;
-
-			bDataWritten = TRUE;
-		}
+		goto cleanup;
 	}
 
+	/*
+	 * Buffer:
+	 *  [    ****************               ]
+	 *     Start           Stop
+	**/
+
+	if (file_info->start_index == file_info->end_index + 1) {
+		DbgPrint("Buffer full...\n");
+		goto cleanup;
+	}
+
+	UINT uiLinearLengthAvailable;
+
+	if (file_info->start_index == 0) {
+		uiLinearLengthAvailable = sizeof(file_info->circular_buffer) - (file_info->end_index + 1);
+	} else {
+		uiLinearLengthAvailable = sizeof(file_info->circular_buffer) - file_info->end_index;
+	}
+
+	UINT uiCopyLength = MIN(uiLinearLengthAvailable, length);
+	DbgPrint("uiCopyLength %d = MIN(uiLinearLengthAvailable %d, uiLength %d)\n",
+					uiCopyLength, uiLinearLengthAvailable, length);
+	if (uiCopyLength == 0) {
+		DbgPrint("Nothing to copy\n");
+		goto cleanup;
+	}
+
+	RtlCopyMemory(file_info->circular_buffer + file_info->end_index, data, uiCopyLength);
+
+	file_info->end_index += uiCopyLength;
+	*str_length = uiCopyLength;
+
+	if (file_info->end_index < sizeof(file_info->circular_buffer)) {
+		DbgPrint("Not the end of the buffer\n");
+		goto cleanup;
+	}
+
+	file_info->end_index = 0;
+	DbgPrint("file_info->end_index = 0 %i - %i = %i\n", length , uiCopyLength, (length - uiCopyLength));
+
+	UINT uiSecondCopyLength = MIN(file_info->start_index - 1, length - uiCopyLength);
+	DbgPrint("uiSecondCopyLength = %d\n", uiSecondCopyLength);
+	if (uiSecondCopyLength == 0) {
+		DbgPrint("Nothing to write anymore.\n");
+		goto cleanup;
+	}
+
+	RtlCopyMemory(file_info->circular_buffer, data, uiSecondCopyLength);
+
+	file_info->end_index = uiSecondCopyLength;
+	*str_length = uiCopyLength + uiSecondCopyLength;
+
 cleanup:
-	DbgPrint("After: Start Index = %i Stop Index = %i Size Of Buffer = %i\n",
+	DbgPrint("After: Start Index = %d Stop Index = %d Size Of Buffer = %d\n",
 					file_info->start_index,
 					file_info->end_index,
 					sizeof(file_info->circular_buffer));
@@ -497,5 +519,5 @@ cleanup:
 		DbgPrint("Release write file_info->mutex\n");
 		KeReleaseMutex(&file_info->mutex, FALSE);
 	}
-	return bDataWritten;
+	return status;
 }
