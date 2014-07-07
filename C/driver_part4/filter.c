@@ -14,7 +14,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 
 	PDEVICE_OBJECT deviceObject = NULL;
 	status = IoCreateDevice(driverObject,
-							sizeof(filter_device_context_t),
+							sizeof(filter_device_extension_t),
 							NULL,
 							FILE_DEVICE_UNKNOWN,
 							FILE_DEVICE_SECURE_OPEN,
@@ -30,8 +30,11 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 	for (UINT i = 0; i < IRP_MJ_MAXIMUM_FUNCTION; i++) {
 		driverObject->MajorFunction[i] = unsuported_function;
 	}
+	driverObject->MajorFunction[IRP_MJ_CLOSE] = ignored_function;
+	driverObject->MajorFunction[IRP_MJ_CREATE] = ignored_function;
+	driverObject->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL] = ignored_function;
 
-	filter_device_context_t* context = (filter_device_context_t*) deviceObject->DeviceExtension;
+	filter_device_extension_t* context = (filter_device_extension_t*) deviceObject->DeviceExtension;
 
 	UNICODE_STRING filteredDeviceName;
 	RtlInitUnicodeString(&filteredDeviceName, DEVICE_PATH);
@@ -59,7 +62,7 @@ cleanup:
 VOID STDCALL my_unload(PDRIVER_OBJECT DriverObject) {
 	DbgPrint("GoodBye!!\n");
 
-	filter_device_context_t* context = (filter_device_context_t*) DriverObject->DeviceObject->DeviceExtension;
+	filter_device_extension_t* context = (filter_device_extension_t*) DriverObject->DeviceObject->DeviceExtension;
 	if (context->nextDeviceInChain) {
 		IoDetachDevice(context->nextDeviceInChain);
 	}
@@ -75,6 +78,20 @@ NTSTATUS STDCALL unsuported_function(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 	DbgPrint("unsuported_function called: 0x%02X\n", pIoStackIrp->MajorFunction);
+
+	return status;
+}
+
+NTSTATUS STDCALL ignored_function(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS status = STATUS_SUCCESS;
+
+	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+	DbgPrint("ignored_function called: 0x%02X\n", pIoStackIrp->MajorFunction);
+
+	filter_device_extension_t* extension = (filter_device_extension_t*) DeviceObject->DeviceExtension;
+
+	IoSkipCurrentIrpStackLocation(Irp);
+	status = IoCallDriver(extension->nextDeviceInChain, Irp);
 
 	return status;
 }

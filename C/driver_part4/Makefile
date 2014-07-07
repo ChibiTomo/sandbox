@@ -1,5 +1,6 @@
 all:
 	gcc -c -I/mingw/include/ddk -std=gnu99 -o driver.o driver.c
+	gcc -E -I/mingw/include/ddk -std=gnu99 -o driver.i driver.c
 	gcc -Wl,--base-file,driver.base \
 		-Wl,--subsystem,native \
 		-Wl,--entry,_DriverEntry@8 \
@@ -25,6 +26,7 @@ all:
 		-lntoskrnl -lhal
 	#filter
 	gcc -c -I/mingw/include/ddk -std=gnu99 -o filter.o filter.c
+	gcc -E -I/mingw/include/ddk -std=gnu99 -o filter.i filter.c
 	gcc -Wl,--base-file,filter.base \
 		-Wl,--subsystem,native \
 		-Wl,--entry,_DriverEntry@8 \
@@ -48,8 +50,8 @@ all:
 		-o my_filter_driver.sys \
 		filter.o \
 		-lntoskrnl -lhal
-#	gcc -o sender sender.c
-#	gcc -o receiver receiver.c
+		gcc -o sender sender.c
+		gcc -o receiver receiver.c
 
 clean:
 	rm -f *sys *o *base *tmp *pe *exp *def *dll.a *exe *i *s
