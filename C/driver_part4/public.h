@@ -2,8 +2,8 @@
 
 #define FILE_PATH "\\\\.\\"DEVICE_NAME"\\tmp_file"
 
-#define DEVICE_PATH L"\\Device\\" DEVICE_NAME
-#define DOSDEVICE_PATH L"\\DosDevice\\" DEVICE_NAME
+#define DEVICE_PATH L"\\Device\\"DEVICE_NAME
+#define DOSDEVICE_PATH L"\\DosDevices\\"DEVICE_NAME
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 

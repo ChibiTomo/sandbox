@@ -3,7 +3,7 @@
 #include "filter.h"
 #include "public.h"
 
-#define DbgPrint(format, ...) DbgPrint("Filter: "format, ##__VA_ARGS__)
+#define DbgPrint(format, ...) DbgPrint("[Filter] "format, ##__VA_ARGS__)
 
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath) {
 	NTSTATUS status = STATUS_SUCCESS;

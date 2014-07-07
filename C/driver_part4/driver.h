@@ -31,8 +31,8 @@ NTSTATUS STDCALL unsuported_function(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_create(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_close(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS STDCALL my_internal_ioctl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS STDCALL my_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS STDCALL my_write(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+//NTSTATUS STDCALL my_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+//NTSTATUS STDCALL my_write(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 NTSTATUS create_pipe_extension(device_extension_t* deviceContext, PFILE_OBJECT pFileObject);
 NTSTATUS release_pipe_extension(device_extension_t* deviceContext, PFILE_OBJECT pFileObject);
