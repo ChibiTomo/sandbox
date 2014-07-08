@@ -2,6 +2,8 @@
 #include "driver.h"
 #include "public.h"
 
+#define DbgPrint(format, ...) DbgPrint("[Driver] "format, ##__VA_ARGS__)
+
 VOID STDCALL Example_Unload(PDRIVER_OBJECT  DriverObject);
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT  pDriverObject, PUNICODE_STRING  pRegistryPath);
 
