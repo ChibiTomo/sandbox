@@ -9,91 +9,61 @@ VOID STDCALL ExampleFilter_Unload(PDRIVER_OBJECT  DriverObject);
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT  pDriverObject, PUNICODE_STRING  pRegistryPath);
 
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT  pDriverObject, PUNICODE_STRING  pRegistryPath) {
-    NTSTATUS NtStatus = STATUS_SUCCESS;
-    UINT uiIndex = 0;
-    PDEVICE_OBJECT pDeviceObject = NULL, pFilteredDevice = NULL;
-    UNICODE_STRING usDeviceToFilter;
-    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext;
+	NTSTATUS NtStatus = STATUS_SUCCESS;
 
-    DbgPrint("DriverEntry Called\n");
+	DbgPrint("DriverEntry Called\n");
 
-    NtStatus = IoCreateDevice(pDriverObject, sizeof(EXAMPLE_FILTER_EXTENSION), NULL, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);
+	PDEVICE_OBJECT pDeviceObject = NULL;
+	NtStatus = IoCreateDevice(	pDriverObject,
+								sizeof(EXAMPLE_FILTER_EXTENSION),
+								NULL,
+								FILE_DEVICE_UNKNOWN,
+								FILE_DEVICE_SECURE_OPEN,
+								FALSE,
+								&pDeviceObject);
 
-    if(NtStatus == STATUS_SUCCESS)
-    {
+	if(NtStatus != STATUS_SUCCESS) {
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
+	for(int i = 0; i < IRP_MJ_MAXIMUM_FUNCTION; i++) {
+		pDriverObject->MajorFunction[i] = ExampleFilter_UnSupportedFunction;
+	}
 
-        /*
-         * The "MajorFunction" is a list of function pointers for entry points into the driver.
-         * You can set them all to point to 1 function, then have a switch statement for all
-         * IRP_MJ_*** functions or you can set specific function pointers for each entry
-         * into the driver.
-         *
-         */
-        for(uiIndex = 0; uiIndex < IRP_MJ_MAXIMUM_FUNCTION; uiIndex++)
-             pDriverObject->MajorFunction[uiIndex] = ExampleFilter_UnSupportedFunction;
+	pDriverObject->MajorFunction[IRP_MJ_CLOSE]             = ExampleFilter_Close;
+	pDriverObject->MajorFunction[IRP_MJ_CREATE]            = ExampleFilter_Create;
+	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]    = ExampleFilter_IoControl;
+	pDriverObject->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL] = ExampleFilter_IoControlInternal;
+	pDriverObject->MajorFunction[IRP_MJ_READ]              = ExampleFilter_Read;
+	pDriverObject->MajorFunction[IRP_MJ_WRITE]             = ExampleFilter_Write;
 
-        pDriverObject->MajorFunction[IRP_MJ_CLOSE]             = ExampleFilter_Close;
-        pDriverObject->MajorFunction[IRP_MJ_CREATE]            = ExampleFilter_Create;
-        pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]    = ExampleFilter_IoControl;
-        pDriverObject->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL] = ExampleFilter_IoControlInternal;
-//        pDriverObject->MajorFunction[IRP_MJ_READ]              = ExampleFilter_Read;
-        pDriverObject->MajorFunction[IRP_MJ_WRITE]             = ExampleFilter_Write;
+	pDriverObject->DriverUnload =  ExampleFilter_Unload;
 
-        /*
-         * Required to unload the driver dynamically.  If this function is missing
-         * the driver cannot be dynamically unloaded.
-         */
-        pDriverObject->DriverUnload =  ExampleFilter_Unload;
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION) pDeviceObject->DeviceExtension;
 
-        /*
-         *  We want to save the device we attached to on the lower end so we can use it in
-         *  subsequent calls and be able to send IRP's down properly.
-         */
+	UNICODE_STRING usDeviceToFilter;
+	RtlInitUnicodeString(&usDeviceToFilter, L"\\Device\\Example");
+	NtStatus = IoAttachDevice(pDeviceObject, &usDeviceToFilter, &pExampleFilterDeviceContext->pNextDeviceInChain);
 
-        pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)pDeviceObject->DeviceExtension;
+	if(NtStatus != STATUS_SUCCESS) {
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
 
-        /*
-         * We want to attach this device above our other device.  So this driver will actually
-         * sit on top of our other driver.  We will be able to filter all calls to the device.
-         */
+	PDEVICE_OBJECT pFilteredDevice = pExampleFilterDeviceContext->pNextDeviceInChain;
 
-        RtlInitUnicodeString(&usDeviceToFilter, L"\\Device\\Example");
-        NtStatus = IoAttachDevice(pDeviceObject, &usDeviceToFilter, &pExampleFilterDeviceContext->pNextDeviceInChain);
+	pDeviceObject->Flags |= pFilteredDevice->Flags & (DO_BUFFERED_IO | DO_DIRECT_IO);
+	pDeviceObject->DeviceType = pFilteredDevice->DeviceType;
+	pDeviceObject->Characteristics = pFilteredDevice->Characteristics;
+	pDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
 
-        /*
-         * WARNING!
-         *
-         *  The IoAttachDevice() API opens the DeviceObject for us then calls IoAttachDeviceToStack() then closes
-         * the object.  That means we will get the CLEAN UP and CLOSE IRP Major functions before IoAttachDevice
-         * returns!  We need to make sure the function pointer we pass in can be accessed by those functions in
-         * some system wide memory space.  The DeviceExtension is a great place to put this and it must
-         * be passed into IoAttachDevice!!!!!!!!!
-         */
-
-
-        if(!NT_SUCCESS(NtStatus))
-        {
-           IoDeleteDevice(pDeviceObject);
-        }
-        else
-        {
-            pFilteredDevice = pExampleFilterDeviceContext->pNextDeviceInChain;
-
-
-            /*
-             * Our device driver should ensure that it is using the same type of I/O as the
-             * device it is attempting to filter.  For example, buffered, direct or neither should
-             * be the same.
-             */
-            pDeviceObject->Flags |= pFilteredDevice->Flags & (DO_BUFFERED_IO | DO_DIRECT_IO);
-            pDeviceObject->DeviceType = pFilteredDevice->DeviceType;
-            pDeviceObject->Characteristics = pFilteredDevice->Characteristics;
-            pDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-        }
-    }
-
-
-    return NtStatus;
+cleanup:
+	if (NtStatus != STATUS_SUCCESS) {
+		if (pDeviceObject) {
+			IoDeleteDevice(pDeviceObject);
+		}
+	}
+	return NtStatus;
 }
 
 
@@ -105,20 +75,12 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT  pDriverObject, PUNICODE_STRING  pRe
  *    driver is unloaded.
  *
  **********************************************************************/
-VOID STDCALL ExampleFilter_Unload(PDRIVER_OBJECT  DriverObject)
-{
+VOID STDCALL ExampleFilter_Unload(PDRIVER_OBJECT  DriverObject) {
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DriverObject->DeviceObject->DeviceExtension;
+	DbgPrint("ExampleFilter_Unload Called\n");
 
-    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DriverObject->DeviceObject->DeviceExtension;
-    DbgPrint("ExampleFilter_Unload Called \r\n");
-    /*
-     * We need to detach the device from the device stack before
-     * we delete it.
-     *
-     *  FYI - We aren't doing any error checking here to determine
-     *        if anything succeeded!
-     */
-    IoDetachDevice(pExampleFilterDeviceContext->pNextDeviceInChain);
-    IoDeleteDevice(DriverObject->DeviceObject);
+	IoDetachDevice(pExampleFilterDeviceContext->pNextDeviceInChain);
+	IoDeleteDevice(DriverObject->DeviceObject);
 }
 
 /**********************************************************************
@@ -128,222 +90,112 @@ NTSTATUS ExampleFilter_CompletionRoutine(PDEVICE_OBJECT DeviceObject, PIRP Irp, 
 NTSTATUS ExampleFilter_FixNullString(PCHAR pString, UINT uiSize);
 
 /**********************************************************************
- *
  *  ExampleFilter_Create
  *
  *    This is called when an instance of this driver is created (CreateFile)
- *
  **********************************************************************/
-NTSTATUS STDCALL ExampleFilter_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-    NTSTATUS NtStatus = STATUS_SUCCESS;
-    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
-    PIO_STACK_LOCATION pIoStackIrp = NULL;
+NTSTATUS STDCALL ExampleFilter_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS NtStatus = STATUS_SUCCESS;
 
-    DbgPrint("ExampleFilter_Create Called \r\n");
+	DbgPrint("ExampleFilter_Create Called \r\n");
 
-    /*
-     * We do not want to process this IRP, we simply want to send it down to the next driver.
-     * We use IoSkipCurrentIrpStackLocation() since we do not want to set a completion routine.
-     *
-     * We should not complete this IRP!  Once we pass it down we must forget about it.
-     */
+	IoSkipCurrentIrpStackLocation(Irp);
 
-    IoSkipCurrentIrpStackLocation(Irp);
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
+	NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
 
-   /*
-    * IoCallDriver() simply calls the appropriate entry point in the driver object associated
-    * with the device object.  This is how drivers are basically "chained" together, they must know
-    * that there are lower driver so they can perform the appropriate action and send down the IRP.
-    *
-    * They do not have to send the IRP down they could simply process it completely themselves if they wish.
-    */
-
-    NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
-
-    DbgPrint("ExampleFilter_Create Exit 0x%0x \r\n", NtStatus);
-    return NtStatus;
+	DbgPrint("ExampleFilter_Create Exit 0x%0x \r\n", NtStatus);
+	return NtStatus;
 }
 
 
 /**********************************************************************
- *
  *  ExampleFilter_Close
  *
  *    This is called when an instance of this driver is closed (CloseHandle)
- *
  **********************************************************************/
-NTSTATUS STDCALL ExampleFilter_Close(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-    NTSTATUS NtStatus = STATUS_SUCCESS;
-    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
-    PIO_STACK_LOCATION pIoStackIrp = NULL;
+NTSTATUS STDCALL ExampleFilter_Close(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS NtStatus = STATUS_SUCCESS;
 
-    DbgPrint("ExampleFilter_Close Called \r\n");
+	DbgPrint("ExampleFilter_Close Called \r\n");
 
+	IoSkipCurrentIrpStackLocation(Irp);
 
-    /*
-     * We do not want to process this IRP, we simply want to send it down to the next driver.
-     * We use IoSkipCurrentIrpStackLocation() since we do not want to set a completion routine.
-     *
-     * We should not complete this IRP!  Once we pass it down we must forget about it.
-     */
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
+	NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
 
-    IoSkipCurrentIrpStackLocation(Irp);
-
-   /*
-    * IoCallDriver() simply calls the appropriate entry point in the driver object associated
-    * with the device object.  This is how drivers are basically "chained" together, they must know
-    * that there are lower driver so they can perform the appropriate action and send down the IRP.
-    *
-    * They do not have to send the IRP down they could simply process it completely themselves if they wish.
-    */
-
-    NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
-
-    DbgPrint("ExampleFilter_Close Exit 0x%0x \r\n", NtStatus);
-
-
-    return NtStatus;
+	DbgPrint("ExampleFilter_Close Exit 0x%0x \r\n", NtStatus);
+	return NtStatus;
 }
 
 
 /**********************************************************************
- *
  *  ExampleFilter_IoControlInternal
  *
  *    These are IOCTL's which can only be sent by other drivers.
- *
  **********************************************************************/
-NTSTATUS STDCALL ExampleFilter_IoControlInternal(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-    NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
-    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
-    PIO_STACK_LOCATION pIoStackIrp = NULL;
-    DbgPrint("ExampleFilter_IoControlInternal Called \r\n");
+NTSTATUS STDCALL ExampleFilter_IoControlInternal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
 
-    /*
-     * We do not want to process this IRP, we simply want to send it down to the next driver.
-     * We use IoSkipCurrentIrpStackLocation() since we do not want to set a completion routine.
-     *
-     * We should not complete this IRP!  Once we pass it down we must forget about it.
-     */
+	DbgPrint("ExampleFilter_IoControlInternal Called \r\n");
 
-    IoSkipCurrentIrpStackLocation(Irp);
+	IoSkipCurrentIrpStackLocation(Irp);
 
-   /*
-    * IoCallDriver() simply calls the appropriate entry point in the driver object associated
-    * with the device object.  This is how drivers are basically "chained" together, they must know
-    * that there are lower driver so they can perform the appropriate action and send down the IRP.
-    *
-    * They do not have to send the IRP down they could simply process it completely themselves if they wish.
-    */
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
+	NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
 
-    NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
+	DbgPrint("ExampleFilter_IoControlInternal Exit 0x%0x \r\n", NtStatus);
 
-    DbgPrint("ExampleFilter_IoControlInternal Exit 0x%0x \r\n", NtStatus);
-
-    return NtStatus;
+	return NtStatus;
 }
 
-
-
 /**********************************************************************
- *
  *  ExampleFilter_IoControl
  *
  *    This is called when an IOCTL is issued on the device handle (DeviceIoControl)
- *
  **********************************************************************/
-NTSTATUS STDCALL ExampleFilter_IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-    NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
-    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
-    PIO_STACK_LOCATION pIoStackIrp = NULL;
-    DbgPrint("ExampleFilter_IoControl Called \r\n");
+NTSTATUS STDCALL ExampleFilter_IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
 
-    /*
-     * We do not want to process this IRP, we simply want to send it down to the next driver.
-     * We use IoSkipCurrentIrpStackLocation() since we do not want to set a completion routine.
-     *
-     * We should not complete this IRP!  Once we pass it down we must forget about it.
-     */
+	DbgPrint("ExampleFilter_IoControl Called \r\n");
 
-    IoSkipCurrentIrpStackLocation(Irp);
+	IoSkipCurrentIrpStackLocation(Irp);
 
-   /*
-    * IoCallDriver() simply calls the appropriate entry point in the driver object associated
-    * with the device object.  This is how drivers are basically "chained" together, they must know
-    * that there are lower driver so they can perform the appropriate action and send down the IRP.
-    *
-    * They do not have to send the IRP down they could simply process it completely themselves if they wish.
-    */
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
+	NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
 
-    NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
+	DbgPrint("ExampleFilter_IoControl Exit 0x%0x \r\n", NtStatus);
 
-    DbgPrint("ExampleFilter_IoControl Exit 0x%0x \r\n", NtStatus);
-
-    return NtStatus;
+	return NtStatus;
 }
 
-
-
-
-
-
 /**********************************************************************
- *
  *  ExampleFilter_Write
  *
  *    This is called when a write is issued on the device handle (WriteFile/WriteFileEx)
- *
- *
  **********************************************************************/
-NTSTATUS STDCALL ExampleFilter_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-    NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
-    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
-    PIO_STACK_LOCATION pIoStackIrp = NULL;
-\
-    DbgPrint("ExampleFilter_Write Called \r\n");
+NTSTATUS STDCALL ExampleFilter_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
 
+	DbgPrint("ExampleFilter_Write Called \r\n");
 
-    /*
-     * We do not want to process this IRP, we simply want to send it down to the next driver.
-     * We use IoSkipCurrentIrpStackLocation() since we do not want to set a completion routine.
-     *
-     * We should not complete this IRP!  Once we pass it down we must forget about it.
-     */
+	IoSkipCurrentIrpStackLocation(Irp);
 
-    IoSkipCurrentIrpStackLocation(Irp);
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
+	NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
 
-   /*
-    * IoCallDriver() simply calls the appropriate entry point in the driver object associated
-    * with the device object.  This is how drivers are basically "chained" together, they must know
-    * that there are lower driver so they can perform the appropriate action and send down the IRP.
-    *
-    * They do not have to send the IRP down they could simply process it completely themselves if they wish.
-    */
+	DbgPrint("ExampleFilter_Write Exit 0x%0x \r\n", NtStatus);
 
-    NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
-
-    DbgPrint("ExampleFilter_Write Exit 0x%0x \r\n", NtStatus);
-
-
-    return NtStatus;
+	return NtStatus;
 }
 
-
 /**********************************************************************
- *
  *  ExampleFilter_Read
  *
  *    This is called when a read is issued on the device handle (ReadFile/ReadFileEx)
- *
- *
  **********************************************************************/
-//NTSTATUS STDCALL ExampleFilter_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-//{
+NTSTATUS STDCALL ExampleFilter_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS NtStatus = STATUS_SUCCESS;
 //    NTSTATUS NtStatus = STATUS_BUFFER_TOO_SMALL;
 //    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
 //    PIO_STACK_LOCATION pIoStackIrp = NULL;
@@ -462,106 +314,67 @@ NTSTATUS STDCALL ExampleFilter_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 //     * Complete the IRP
 //     *
 //     */
-//
-//    Irp->IoStatus.Status = NtStatus;
-//    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-//
-//    DbgPrint("ExampleFilter_Read Exit 0x%0x \r\n", NtStatus);
-//
-//    return NtStatus;
-//}
 
+    Irp->IoStatus.Status = NtStatus;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-
-
-/**********************************************************************
- *
- *  ExampleFilter_UnSupportedFunction
- *
- *    This is called when a major function is issued that isn't supported.
- *
- **********************************************************************/
-NTSTATUS STDCALL ExampleFilter_UnSupportedFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-    NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
-    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
-    DbgPrint("ExampleFilter_UnSupportedFunction Called \r\n");
-    /*
-     * We do not want to process this IRP, we simply want to send it down to the next driver.
-     * We use IoSkipCurrentIrpStackLocation() since we do not want to set a completion routine.
-     *
-     * We should not complete this IRP!  Once we pass it down we must forget about it.
-     */
-
-    IoSkipCurrentIrpStackLocation(Irp);
-
-   /*
-    * IoCallDriver() simply calls the appropriate entry point in the driver object associated
-    * with the device object.  This is how drivers are basically "chained" together, they must know
-    * that there are lower driver so they can perform the appropriate action and send down the IRP.
-    *
-    * They do not have to send the IRP down they could simply process it completely themselves if they wish.
-    */
-
-    NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
-
-
-    DbgPrint("ExampleFilter_UnSupportedFunction Exit 0x%0x \r\n", NtStatus);
+    DbgPrint("ExampleFilter_Read Exit 0x%0x \r\n", NtStatus);
 
     return NtStatus;
 }
 
 /**********************************************************************
+ *  ExampleFilter_UnSupportedFunction
  *
+ *    This is called when a major function is issued that isn't supported.
+ **********************************************************************/
+NTSTATUS STDCALL ExampleFilter_UnSupportedFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
+
+	DbgPrint("ExampleFilter_UnSupportedFunction Called \r\n");
+
+	IoSkipCurrentIrpStackLocation(Irp);
+
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
+	NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
+
+	DbgPrint("ExampleFilter_UnSupportedFunction Exit 0x%0x \r\n", NtStatus);
+
+	return NtStatus;
+}
+
+/**********************************************************************
  *  ExampleFilter_CompletionRoutine
  *
  *    This is called when an IRP has been completed (IoCompleteRequest)
- *
  **********************************************************************/
-
-NTSTATUS ExampleFilter_CompletionRoutine(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context)
-{
-
-    DbgPrint("ExampleFilter_CompletionRoutine Called \r\n");
-    /*
-     *   We need to return "STATUS_MORE_PROCESSING_REQUIRED" so that we can use the IRP in our driver.
-     *   If we complete this here we would not be able to use it and the IRP would be completed.  This
-     *   also means that our driver must also complete the IRP since it has not been completed yet.
-     */
-    return STATUS_MORE_PROCESSING_REQUIRED;
+NTSTATUS ExampleFilter_CompletionRoutine(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context) {
+	DbgPrint("ExampleFilter_CompletionRoutine Called\n");
+	return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-
 /**********************************************************************
- *
  *  ExampleFilter_FixNullString
  *
  *    This function will simply fix the NULL in the returned string.
  *    This is a very simple implementation for demonstration purposes.
- *
  **********************************************************************/
-NTSTATUS ExampleFilter_FixNullString(PCHAR pString, UINT uiSize)
-{
-   NTSTATUS NtStatus = STATUS_SUCCESS;
-   UINT uiIndex = 0;
+NTSTATUS ExampleFilter_FixNullString(PCHAR pString, UINT uiSize) {
+	NTSTATUS NtStatus = STATUS_SUCCESS;
+	UINT uiIndex = 0;
 
-   while(uiIndex < (uiSize - 1))
-   {
-       if(pString[uiIndex] == 0)
-       {
-           pString[uiIndex] = ' ';
-       }
+	while(uiIndex < (uiSize - 1)) {
+		if(pString[uiIndex] == 0) {
+			pString[uiIndex] = ' ';
+		}
+		uiIndex++;
+	}
 
-       uiIndex++;
-   }
+	/*
+	* Fix the end NULL
+	*/
+	pString[uiIndex] = 0;
 
-   /*
-    * Fix the end NULL
-    */
-   pString[uiIndex] = 0;
-
-   return NtStatus;
+	return NtStatus;
 }
-
-
 
