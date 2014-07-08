@@ -1,5 +1,5 @@
 all:
-	gcc -c -I/mingw/include/ddk -std=gnu99 -o driver.o driver.c
+	gcc -Wall -Werror -c -I/mingw/include/ddk -std=gnu99 -Wno-multichar -o driver.o driver.c
 	gcc -E -I/mingw/include/ddk -std=gnu99 -o driver.i driver.c
 	gcc -Wl,--base-file,driver.base \
 		-Wl,--subsystem,native \
@@ -50,8 +50,8 @@ all:
 		-o my_filter_driver.sys \
 		filter.o \
 		-lntoskrnl -lhal
-		gcc -o sender sender.c
-		gcc -o receiver receiver.c
+	gcc -o sender sender.c
+	gcc -o receiver receiver.c
 
 clean:
 	rm -f *sys *o *base *tmp *pe *exp *def *dll.a *exe *i *s
