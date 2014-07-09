@@ -1,6 +1,11 @@
 #ifndef PUBLIC_H
 #define PUBLIC_H
 
+#ifndef __USE_NTOSKRNL__ // Not inside the driver (ie: in client app)
+#include <windows.h>
+#include <winioctl.h>
+#endif // __USE_NTOSKRNL__
+
 #define DEVICE_NAME "YTDevice"
 #define DEVICE_PATH L"\\Device\\"DEVICE_NAME
 #define DOSDEVICE_PATH L"\\DosDevices\\"DEVICE_NAME

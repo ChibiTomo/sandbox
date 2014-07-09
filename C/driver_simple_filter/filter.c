@@ -98,7 +98,8 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	DbgPrint("IOCTL = 0x%08X\n", pIoStackIrp->Parameters.DeviceIoControl.IoControlCode);
 	switch(pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
 		case MY_IOCTL_PUSH:
-			status = my_ioctl_push(Irp);
+			status = my_ioctl_push(deviceObject, Irp);
+			passDownIrp = FALSE;
 			break;
 
 		case MY_IOCTL_POP:
@@ -116,7 +117,7 @@ cleanup:
 	return status;
 }
 
-NTSTATUS my_ioctl_push(PIRP Irp) {
+NTSTATUS my_ioctl_push(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_ioctl_push called\n");
@@ -125,6 +126,9 @@ NTSTATUS my_ioctl_push(PIRP Irp) {
 
 	int old = *c;
 	switch(*c) {
+		case 0:
+			status = STATUS_UNSUCCESSFUL;
+			break;
 		case 1:
 			*c = 'a';
 			break;
@@ -163,6 +167,15 @@ NTSTATUS my_ioctl_push(PIRP Irp) {
 
 	DbgPrint("Translate: %d=>%c\n", old, *c);
 
+	if (status == STATUS_SUCCESS) {
+		IoSkipCurrentIrpStackLocation(Irp);
+		device_extension_t* device_extension = (device_extension_t*) deviceObject->DeviceExtension;
+		status = IoCallDriver(device_extension->next, Irp);
+	} else {
+		Irp->IoStatus.Status = status;
+		Irp->IoStatus.Information = 0;
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	}
 	return status;
 }
 
