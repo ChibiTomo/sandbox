@@ -79,14 +79,6 @@ NTSTATUS STDCALL my_create(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 
 	DbgPrint("my_create called\n");
 
-	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
-	if(!pIoStackIrp) {
-		DbgPrint("No I/O stack location\n");
-		status = STATUS_UNSUCCESSFUL;
-		goto cleanup;
-	}
-
-cleanup:
 	Irp->IoStatus.Status = status;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
@@ -108,11 +100,11 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	DbgPrint("IOCTL = 0x%08X\n", pIoStackIrp->Parameters.DeviceIoControl.IoControlCode);
 	switch(pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
 		case MY_IOCTL_PUSH:
-			status = my_ioctl_push(Irp, pIoStackIrp, &dataSize);
+			status = my_ioctl_push(Irp, &dataSize);
 			break;
 
 		case MY_IOCTL_POP:
-			status = my_ioctl_pop(Irp, pIoStackIrp, &dataSize);
+			status = my_ioctl_pop(Irp, &dataSize);
 			break;
 
 		default:
@@ -127,7 +119,7 @@ cleanup:
 	return status;
 }
 
-NTSTATUS my_ioctl_push(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT* dataRead) {
+NTSTATUS my_ioctl_push(PIRP Irp, UINT* dataRead) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_ioctl_push called\n");
@@ -140,7 +132,7 @@ NTSTATUS my_ioctl_push(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT* dataRead)
 	return status;
 }
 
-NTSTATUS my_ioctl_pop(PIRP Irp, PIO_STACK_LOCATION pIoStackIrp, UINT* dataWrite) {
+NTSTATUS my_ioctl_pop(PIRP Irp, UINT* dataWrite) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_ioctl_pop called\n");
