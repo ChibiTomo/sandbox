@@ -1,23 +1,26 @@
 #include <stdio.h>
 #include "public.h"
 
-#define PUSH(nbr) \
-	input[0] = nbr; \
-	printf("About to push: %d\n", input[0]); \
-	ZeroMemory(output, sizeof(output)); \
-	success = DeviceIoControl(hFile, \
-								MY_IOCTL_PUSH, \
-								&input, \
-								sizeof(input), \
-								NULL, \
-								0, \
-								&returnSize, \
-								NULL); \
-	if (!success) { \
-		printf("Push error\n"); \
-	} else { \
-		printf("Successfully pushed: %d\n", input[0]); \
+void push(HANDLE hFile, char input) {
+	void* p = &input;
+	printf("About to push: %d\n", input);
+
+	long returnSize = 0;
+
+	BOOLEAN success = DeviceIoControl(hFile,
+								MY_IOCTL_PUSH,
+								&p,
+								sizeof(input),
+								NULL,
+								0,
+								&returnSize,
+								NULL);
+	if (!success) {
+		printf("Push error\n");
+	} else {
+		printf("Successfully pushed: %d\n", input);
 	}
+}
 
 #define POP() \
 	printf("About to pop\n"); \
@@ -54,11 +57,11 @@ int main() {
 	char output[1];
 	long returnSize = 0;
 
-	PUSH(0);
-	PUSH(5);
-	PUSH(1);
-	PUSH(10);
-	PUSH(4);
+	push(hFile, 0);
+	push(hFile, 5);
+	push(hFile, 1);
+	push(hFile, 10);
+	push(hFile, 4);
 
 	POP();
 
