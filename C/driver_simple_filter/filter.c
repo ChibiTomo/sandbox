@@ -190,13 +190,6 @@ NTSTATUS my_ioctl_pop(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	device_extension_t* device_extension = (device_extension_t*) deviceObject->DeviceExtension;
 	status = IoCallDriver(device_extension->next, Irp);
 
-	return status;
-}
-
-NTSTATUS my_completion_routine(PDEVICE_OBJECT deviceObject, PIRP Irp, PVOID extension) {
-	NTSTATUS status = STATUS_SUCCESS;
-	DbgPrint("my_completion_routine called\n");
-
 	PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
 	char old = *c;
 
@@ -234,10 +227,20 @@ NTSTATUS my_completion_routine(PDEVICE_OBJECT deviceObject, PIRP Irp, PVOID exte
 
 		default:
 			*c = 0;
+			status = STATUS_UNSUCCESSFUL;
 			break;
 	}
 
 	DbgPrint("Translate: %c=>%d\n", old, *c);
 
+	Irp->IoStatus.Status = status;
+	Irp->IoStatus.Information = 0;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
+}
+
+NTSTATUS my_completion_routine(PDEVICE_OBJECT deviceObject, PIRP Irp, PVOID extension) {
+	DbgPrint("my_completion_routine called\n");
+
+	return STATUS_MORE_PROCESSING_REQUIRED;
 }

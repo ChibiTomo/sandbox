@@ -139,7 +139,7 @@ NTSTATUS my_ioctl_pop(PIRP Irp, UINT* dataWrite) {
 
 	PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
 
-	*c = 'f';
+	*c = 'z';
 	DbgPrint("char send: %c\n", *c);
 	*dataWrite = 1;
 

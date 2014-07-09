@@ -20,12 +20,12 @@
 	}
 
 #define POP() \
-	input[0] = 0; \
+	printf("About to pop\n"); \
 	ZeroMemory(output, sizeof(output)); \
 	success = DeviceIoControl(hFile, \
 								MY_IOCTL_POP, \
-								&input, \
-								sizeof(input), \
+								NULL, \
+								0, \
 								&output, \
 								sizeof(output), \
 								&returnSize, \
@@ -33,8 +33,9 @@
 	if (!success) { \
 		printf("Pop error\n"); \
 		goto cleanup; \
-	} \
-	printf("Popping: %d\n", output[0]);
+	} else { \
+		printf("Successfully poped: %d\n", output[0]); \
+	}
 
 
 int main() {
