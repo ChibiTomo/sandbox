@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "public.h"
 
-void push(HANDLE hFile, char input) {
+BOOLEAN push(HANDLE hFile, char input) {
 	printf("About to push: %c\n", input);
 
 	long returnSize = 0;
@@ -19,9 +19,11 @@ void push(HANDLE hFile, char input) {
 	} else {
 		printf("Successfully pushed: %c\n", input);
 	}
+
+	return success;
 }
 
-void pop(HANDLE hFile) {
+BOOLEAN pop(HANDLE hFile) {
 	printf("About to pop\n");
 	char output = 0;
 	long returnSize = 0;
@@ -38,6 +40,8 @@ void pop(HANDLE hFile) {
 	} else {
 		printf("Successfully poped: %c\n", output);
 	}
+
+	return success;
 }
 
 int main() {
@@ -53,12 +57,19 @@ int main() {
 		goto cleanup;
 	}
 
+	while (pop(hFile)) {
+	}
+
 	push(hFile, 'a');
 	push(hFile, 'g');
 	push(hFile, 'A');
 	push(hFile, 't');
 	push(hFile, 145);
 
+	pop(hFile);
+	pop(hFile);
+	pop(hFile);
+	pop(hFile);
 	pop(hFile);
 
 cleanup:
