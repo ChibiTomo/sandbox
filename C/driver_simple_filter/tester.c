@@ -22,24 +22,25 @@ void push(HANDLE hFile, char input) {
 	}
 }
 
-#define POP() \
-	printf("About to pop\n"); \
-	ZeroMemory(output, sizeof(output)); \
-	success = DeviceIoControl(hFile, \
-								MY_IOCTL_POP, \
-								NULL, \
-								0, \
-								&output, \
-								sizeof(output), \
-								&returnSize, \
-								NULL); \
-	if (!success) { \
-		printf("Pop error\n"); \
-		goto cleanup; \
-	} else { \
-		printf("Successfully poped: %d\n", output[0]); \
+void pop(HANDLE hFile) {
+	printf("About to pop\n");
+	char output = 0;
+	void* p = &output;
+	long returnSize = 0;
+	BOOLEAN success = DeviceIoControl(hFile,
+								MY_IOCTL_POP,
+								NULL,
+								0,
+								&p,
+								sizeof(output),
+								&returnSize,
+								NULL);
+	if (!success) {
+		printf("Pop error\n");
+	} else {
+		printf("Successfully poped: %d\n", output);
 	}
-
+}
 
 int main() {
 	printf("Opening: " FILE_PATH "\n");
@@ -63,7 +64,7 @@ int main() {
 	push(hFile, 10);
 	push(hFile, 4);
 
-	POP();
+	pop(hFile);
 
 cleanup:
 	if (hFile != INVALID_HANDLE_VALUE) {
