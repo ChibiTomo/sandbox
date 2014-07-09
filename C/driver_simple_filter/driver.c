@@ -86,7 +86,6 @@ NTSTATUS STDCALL my_create(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 
 NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
-	UINT dataSize = 0;
 
 	DbgPrint("my_ioctl called\n");
 
@@ -100,11 +99,11 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	DbgPrint("IOCTL = 0x%08X\n", pIoStackIrp->Parameters.DeviceIoControl.IoControlCode);
 	switch(pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
 		case MY_IOCTL_PUSH:
-			status = my_ioctl_push(Irp, &dataSize);
+			status = my_ioctl_push(Irp);
 			break;
 
 		case MY_IOCTL_POP:
-			status = my_ioctl_pop(Irp, &dataSize);
+			status = my_ioctl_pop(Irp);
 			break;
 
 		default:
@@ -114,12 +113,11 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 
 cleanup:
 	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = dataSize;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
 }
 
-NTSTATUS my_ioctl_push(PIRP Irp, UINT* dataRead) {
+NTSTATUS my_ioctl_push(PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_ioctl_push called\n");
@@ -127,12 +125,12 @@ NTSTATUS my_ioctl_push(PIRP Irp, UINT* dataRead) {
 	PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
 
 	DbgPrint("char received: %c\n", *c);
-	*dataRead = 1;
+	Irp->IoStatus.Information = 0;
 
 	return status;
 }
 
-NTSTATUS my_ioctl_pop(PIRP Irp, UINT* dataWrite) {
+NTSTATUS my_ioctl_pop(PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_ioctl_pop called\n");
@@ -141,7 +139,7 @@ NTSTATUS my_ioctl_pop(PIRP Irp, UINT* dataWrite) {
 
 	*c = 'z';
 	DbgPrint("char send: %c\n", *c);
-	*dataWrite = 1;
+	Irp->IoStatus.Information = 1;
 
 	return status;
 }
