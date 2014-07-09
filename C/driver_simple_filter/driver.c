@@ -1,7 +1,6 @@
 #include <ntddk.h>
-
-#include "driver.h"
 #include "public.h"
+#include "driver.h"
 
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT  driverObject, PUNICODE_STRING registryPath) {
 	NTSTATUS status = STATUS_SUCCESS;
@@ -29,6 +28,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT  driverObject, PUNICODE_STRING regis
 		driverObject->MajorFunction[i] = my_unsuported_function;
 	}
 	driverObject->MajorFunction[IRP_MJ_CREATE] = my_create;
+	driverObject->MajorFunction[IRP_MJ_CLOSE] = my_close;
 	driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = my_ioctl;
 
 	deviceObject->Flags |= DO_BUFFERED_IO;
@@ -61,7 +61,7 @@ NTSTATUS STDCALL my_unsuported_function(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_NOT_SUPPORTED;
 
 	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
-	if(!pIoStackIrp) {
+	if (!pIoStackIrp) {
 		DbgPrint("Unsuported function called without Irp location\n");
 		status = STATUS_UNSUCCESSFUL;
 		goto cleanup;
@@ -84,6 +84,16 @@ NTSTATUS STDCALL my_create(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	return status;
 }
 
+NTSTATUS STDCALL my_close(PDEVICE_OBJECT deviceObject, PIRP Irp) {
+	NTSTATUS status = STATUS_SUCCESS;
+
+	DbgPrint("my_close called\n");
+
+	Irp->IoStatus.Status = status;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	return status;
+}
+
 NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -97,7 +107,7 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	}
 
 	DbgPrint("IOCTL = 0x%08X\n", pIoStackIrp->Parameters.DeviceIoControl.IoControlCode);
-	switch(pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
+	switch (pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
 		case MY_IOCTL_PUSH:
 			status = my_ioctl_push(Irp);
 			break;
@@ -137,7 +147,7 @@ NTSTATUS my_ioctl_pop(PIRP Irp) {
 
 	PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
 
-	*c = 'z';
+	*c = 'Z';
 	DbgPrint("char send: %c\n", *c);
 	Irp->IoStatus.Information = 1;
 

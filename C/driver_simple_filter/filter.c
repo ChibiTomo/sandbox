@@ -124,54 +124,20 @@ NTSTATUS my_ioctl_push(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 
 	PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
 
-	int old = *c;
-	switch(*c) {
-		case 0:
-			status = STATUS_UNSUCCESSFUL;
-			break;
-		case 1:
-			*c = 'a';
-			break;
-		case 2:
-			*c = 'b';
-			break;
-		case 3:
-			*c = 'c';
-			break;
-		case 4:
-			*c = 'd';
-			break;
-		case 5:
-			*c = 'e';
-			break;
-		case 6:
-			*c = 'f';
-			break;
-		case 7:
-			*c = 'g';
-			break;
-		case 8:
-			*c = 'h';
-			break;
-		case 9:
-			*c = 'i';
-			break;
-		case 10:
-			*c = 'j';
-			break;
-
-		default:
-			*c = 0;
-			break;
+	char old = *c;
+	if (*c >= 97 && *c <= 97 + 26) {
+		*c -= 32;
+		DbgPrint("Translate: %d=>%c\n", old, *c);
+	} else {
+		status = STATUS_UNSUCCESSFUL;
+		DbgPrint("Error: input is not lower case: %c\n", *c);
 	}
-
-	DbgPrint("Translate: %d=>%c\n", old, *c);
 
 	if (status == STATUS_SUCCESS) {
 		IoSkipCurrentIrpStackLocation(Irp);
 		device_extension_t* device_extension = (device_extension_t*) deviceObject->DeviceExtension;
 		status = IoCallDriver(device_extension->next, Irp);
-	} else {
+	} else { // In case of error
 		Irp->IoStatus.Status = status;
 		Irp->IoStatus.Information = 0;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -192,49 +158,16 @@ NTSTATUS my_ioctl_pop(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 
 	PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
 	char old = *c;
-
-	switch(*c) {
-		case 'a':
-			*c = 1;
-			break;
-		case 'b':
-			*c = 2;
-			break;
-		case 'c':
-			*c = 3;
-			break;
-		case 'd':
-			*c = 4;
-			break;
-		case 'e':
-			*c = 5;
-			break;
-		case 'f':
-			*c = 6;
-			break;
-		case 'g':
-			*c = 7;
-			break;
-		case 'h':
-			*c = 8;
-			break;
-		case 'i':
-			*c = 9;
-			break;
-		case 'j':
-			*c = 10;
-			break;
-
-		default:
-			*c = 0;
-			status = STATUS_UNSUCCESSFUL;
-			break;
+	if (*c >= 65 && *c <= 65 + 26) {
+		*c += 32;
+		DbgPrint("Translate: %d=>%c\n", old, *c);
+	} else {
+		status = STATUS_UNSUCCESSFUL;
+		DbgPrint("Error: input is not upper case: %c\n", *c);
 	}
 
-	DbgPrint("Translate: %c=>%d\n", old, *c);
-
 	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = 0;
+	Irp->IoStatus.Information = 1;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
 }
