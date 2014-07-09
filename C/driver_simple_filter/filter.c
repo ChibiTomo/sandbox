@@ -84,6 +84,7 @@ cleanup:
 
 NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
+	BOOLEAN passDownIrp = TRUE;
 
 	DbgPrint("my_ioctl called\n");
 
@@ -101,14 +102,17 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 			break;
 
 		case MY_IOCTL_POP:
-			status = my_ioctl_pop(Irp);
+			status = my_ioctl_pop(deviceObject, Irp);
+			passDownIrp = FALSE;
 			break;
 	}
 
 cleanup:
-	IoSkipCurrentIrpStackLocation(Irp);
-	device_extension_t* device_extension = (device_extension_t*)deviceObject->DeviceExtension;
-	status = IoCallDriver(device_extension->next, Irp);
+	if (passDownIrp) {
+		IoSkipCurrentIrpStackLocation(Irp);
+		device_extension_t* device_extension = (device_extension_t*)deviceObject->DeviceExtension;
+		status = IoCallDriver(device_extension->next, Irp);
+	}
 	return status;
 }
 
@@ -119,7 +123,7 @@ NTSTATUS my_ioctl_push(PIRP Irp) {
 
 	PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
 
-	DbgPrint("%c=>", *c);
+	int old = *c;
 	switch(*c) {
 		case 1:
 			*c = 'a';
@@ -157,17 +161,70 @@ NTSTATUS my_ioctl_push(PIRP Irp) {
 			break;
 	}
 
-	DbgPrint("%c\n", *c);
+	DbgPrint("Translate: %d=>%c\n", old, *c);
 
 	return status;
 }
 
-NTSTATUS my_ioctl_pop(PIRP Irp) {
+NTSTATUS my_ioctl_pop(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_ioctl_pop called\n");
 
-	//PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
+	IoCopyCurrentIrpStackLocationToNext(Irp);
+	IoSetCompletionRoutine(Irp, (PIO_COMPLETION_ROUTINE) my_completion_routine, NULL, TRUE, TRUE, TRUE);
+
+	device_extension_t* device_extension = (device_extension_t*) deviceObject->DeviceExtension;
+	status = IoCallDriver(device_extension->next, Irp);
+
+	return status;
+}
+
+NTSTATUS my_completion_routine(PDEVICE_OBJECT deviceObject, PIRP Irp, PVOID extension) {
+	NTSTATUS status = STATUS_SUCCESS;
+	DbgPrint("my_completion_routine called\n");
+
+	PCHAR c = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
+	char old = *c;
+
+	switch(*c) {
+		case 'a':
+			*c = 1;
+			break;
+		case 'b':
+			*c = 2;
+			break;
+		case 'c':
+			*c = 3;
+			break;
+		case 'd':
+			*c = 4;
+			break;
+		case 'e':
+			*c = 5;
+			break;
+		case 'f':
+			*c = 6;
+			break;
+		case 'g':
+			*c = 7;
+			break;
+		case 'h':
+			*c = 8;
+			break;
+		case 'i':
+			*c = 9;
+			break;
+		case 'j':
+			*c = 10;
+			break;
+
+		default:
+			*c = 0;
+			break;
+	}
+
+	DbgPrint("Translate: %c=>%d\n", old, *c);
 
 	return status;
 }
