@@ -13,9 +13,12 @@ NTSTATUS STDCALL my_create(PDEVICE_OBJECT deviceObject, PIRP Irp);
 NTSTATUS STDCALL my_close(PDEVICE_OBJECT deviceObject, PIRP Irp);
 NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp);
 
-NTSTATUS my_ioctl_say_hello(PIRP Irp);
-NTSTATUS my_ioctl_say_goodbye(PIRP Irp);
-
 void try_attach_to_other_driver(PDRIVER_OBJECT driverObject);
+
+NTSTATUS my_ioctl_say_hello(PIRP Irp, PDEVICE_OBJECT deviceObject);
+
+NTSTATUS say_hello(PDEVICE_OBJECT deviceObject);
+
+NTSTATUS STDCALL my_completion_routine(PDEVICE_OBJECT deviceObject, PIRP Irp, PVOID Context);
 
 #endif // DRIVER_H

@@ -29,7 +29,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING regist
 	}
 	driverObject->MajorFunction[IRP_MJ_CREATE] = my_create;
 	driverObject->MajorFunction[IRP_MJ_CLOSE] = my_close;
-	driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = my_ioctl;
+	driverObject->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL] = my_internal_ioctl;
 
 	deviceObject->Flags |= DO_BUFFERED_IO;
 	deviceObject->Flags &= (~DO_DEVICE_INITIALIZING);
@@ -94,10 +94,10 @@ NTSTATUS STDCALL my_close(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	return status;
 }
 
-NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
+NTSTATUS STDCALL my_internal_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	DbgPrint("my_ioctl called\n");
+	DbgPrint("my_internal_ioctl called\n");
 
 	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 	if(!pIoStackIrp) {
@@ -109,11 +109,7 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	DbgPrint("IOCTL = 0x%08X\n", pIoStackIrp->Parameters.DeviceIoControl.IoControlCode);
 	switch (pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
 		case MY_INTERNAL_IOCTL_HELLO:
-			status = my_ioctl_say_hello(Irp);
-			break;
-
-		case MY_INTERNAL_IOCTL_GOODBYE:
-			status = my_ioctl_say_goodbye( Irp);
+			status = my_internal_ioctl_say_hello(Irp);
 			break;
 
 		default:
@@ -126,28 +122,42 @@ cleanup:
 	return status;
 }
 
-NTSTATUS my_ioctl_say_hello(PIRP Irp) {
+NTSTATUS my_internal_ioctl_say_hello(PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	DbgPrint("my_ioctl_say_hello called\n");
+	DbgPrint("my_internal_ioctl_hello called\n");
 
-	status = STATUS_UNSUCCESSFUL;
+	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+	if(!pIoStackIrp) {
+		DbgPrint("No I/O stack location\n");
+		status = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
 
+	PCHAR msg = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
+	DbgPrint("Someone says: %s\n", msg);
+
+	PCHAR outputBuffer = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
+	int outLength = pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength;
+	RtlZeroMemory(outputBuffer, outLength);
+	RtlCopyMemory(outputBuffer, "Hey! How are you?", outLength);
+
+cleanup:
 	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = 0;
+	Irp->IoStatus.Information = outLength;
 
 	return status;
 }
 
-NTSTATUS my_ioctl_say_goodbye(PIRP Irp) {
-	NTSTATUS status = STATUS_SUCCESS;
-
-	DbgPrint("my_ioctl_say_goodbye called\n");
-
-	status = STATUS_UNSUCCESSFUL;
-
-	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = 0;
-
-	return status;
-}
+//NTSTATUS my_ioctl_say_goodbye(PIRP Irp) {
+//	NTSTATUS status = STATUS_SUCCESS;
+//
+//	DbgPrint("my_ioctl_say_goodbye called\n");
+//
+//	status = STATUS_UNSUCCESSFUL;
+//
+//	Irp->IoStatus.Status = status;
+//	Irp->IoStatus.Information = 0;
+//
+//	return status;
+//}

@@ -175,11 +175,7 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	DbgPrint("IOCTL = 0x%08X\n", pIoStackIrp->Parameters.DeviceIoControl.IoControlCode);
 	switch (pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
 		case MY_INTERNAL_IOCTL_HELLO:
-			status = my_ioctl_say_hello(Irp);
-			break;
-
-		case MY_INTERNAL_IOCTL_GOODBYE:
-			status = my_ioctl_say_goodbye( Irp);
+			status = my_ioctl_say_hello(Irp, deviceObject);
 			break;
 
 		default:
@@ -192,28 +188,87 @@ cleanup:
 	return status;
 }
 
-NTSTATUS my_ioctl_say_hello(PIRP Irp) {
+NTSTATUS my_ioctl_say_hello(PIRP Irp, PDEVICE_OBJECT deviceObject) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_ioctl_say_hello called\n");
 
-	status = STATUS_UNSUCCESSFUL;
+	PDRIVER_OBJECT driver = deviceObject->DriverObject;
+	PDEVICE_OBJECT device = driver->DeviceObject;
+	while(device) {
+		PDEVICE_OBJECT currentDevice = device;
+		DbgPrint("currentDevice=0x%08X\n", currentDevice);
+		device = device->NextDevice;
+		DbgPrint("NextDevice=0x%08X\n", device);
 
+		device_extension_t* device_extension = (device_extension_t*) currentDevice->DeviceExtension;
+		DbgPrint("device_extension->next=0x%08X\n", device_extension->next);
+		if (device_extension->next) {
+			status = say_hello(device_extension->next);
+			if (status != STATUS_SUCCESS) {
+				DbgPrint("0x%08X does not answer correctly\n", device_extension->next);
+				goto cleanup;
+			}
+		}
+	}
+
+cleanup:
 	Irp->IoStatus.Status = status;
 	Irp->IoStatus.Information = 0;
 
 	return status;
 }
 
-NTSTATUS my_ioctl_say_goodbye(PIRP Irp) {
+NTSTATUS say_hello(PDEVICE_OBJECT deviceObject) {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	DbgPrint("my_ioctl_say_goodbye called\n");
+	DbgPrint("Say Hello to 0x%08X\n", deviceObject);
 
-	status = STATUS_UNSUCCESSFUL;
+	PIRP myIrp = IoAllocateIrp(deviceObject->StackSize, FALSE);
+	if(!myIrp) {
+		DbgPrint("Cannot allocate Irp\n");
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto cleanup;
+	}
 
-	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = 0;
+	PIO_STACK_LOCATION pMyIoStackLocation = IoGetNextIrpStackLocation(myIrp);
+	if (!pMyIoStackLocation) {
+		DbgPrint("No stack location\n");
+		status = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
 
+	pMyIoStackLocation->MajorFunction = IRP_MJ_INTERNAL_DEVICE_CONTROL;
+	pMyIoStackLocation->Parameters.DeviceIoControl.IoControlCode = MY_INTERNAL_IOCTL_HELLO;
+
+	char buffer[BUFFER_SIZE];
+	char* msg = "Hello you!";
+	RtlCopyMemory(buffer, msg, BUFFER_SIZE - 1);
+
+	pMyIoStackLocation->Parameters.DeviceIoControl.InputBufferLength  = BUFFER_SIZE;
+	pMyIoStackLocation->Parameters.DeviceIoControl.OutputBufferLength = BUFFER_SIZE;
+
+	myIrp->AssociatedIrp.SystemBuffer = buffer;
+	myIrp->MdlAddress = NULL;
+
+	IoSetCompletionRoutine(myIrp, my_completion_routine, NULL, TRUE, TRUE, TRUE);
+
+	status = IoCallDriver(deviceObject, myIrp);
+	if (status != STATUS_SUCCESS) {
+		DbgPrint("Error while calling the other driver\n");
+		goto cleanup;
+	}
+	DbgPrint("The other one says: %s\n", myIrp->AssociatedIrp.SystemBuffer);
+
+cleanup:
+	if (myIrp) {
+		IoFreeIrp(myIrp);
+	}
 	return status;
+}
+
+NTSTATUS STDCALL my_completion_routine(PDEVICE_OBJECT deviceObject, PIRP Irp, PVOID Context) {
+	DbgPrint("my_completion_routine\n");
+
+	return STATUS_MORE_PROCESSING_REQUIRED;
 }
