@@ -21,10 +21,10 @@ int main() {
 								0,
 								&returnSize,
 								NULL);
-	if (!success) {
-		printf("Discussion error\n");
+	if (success) {
+		printf("DeviceIoControl: success\n");
 	} else {
-		printf("Everyone is polite\n");
+		printf("DeviceIoControl: error\n");
 	}
 
 cleanup:

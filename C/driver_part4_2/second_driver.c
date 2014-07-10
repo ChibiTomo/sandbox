@@ -174,11 +174,12 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 
 	DbgPrint("IOCTL = 0x%08X\n", pIoStackIrp->Parameters.DeviceIoControl.IoControlCode);
 	switch (pIoStackIrp->Parameters.DeviceIoControl.IoControlCode) {
-		case MY_INTERNAL_IOCTL_HELLO:
+		case MY_IOCTL_SAY_HELLO:
 			status = my_ioctl_say_hello(Irp, deviceObject);
 			break;
 
 		default:
+			DbgPrint("Not supported\n");
 			status = STATUS_NOT_SUPPORTED;
 			break;
 	}

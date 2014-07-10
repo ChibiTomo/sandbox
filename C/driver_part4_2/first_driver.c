@@ -140,7 +140,7 @@ NTSTATUS my_internal_ioctl_say_hello(PIRP Irp) {
 	PCHAR outputBuffer = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
 	int outLength = pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength;
 	RtlZeroMemory(outputBuffer, outLength);
-	RtlCopyMemory(outputBuffer, "Hey! How are you?", outLength);
+	RtlCopyMemory(outputBuffer, "Hey! How are you?", outLength - 1);
 
 cleanup:
 	Irp->IoStatus.Status = status;
@@ -148,16 +148,3 @@ cleanup:
 
 	return status;
 }
-
-//NTSTATUS my_ioctl_say_goodbye(PIRP Irp) {
-//	NTSTATUS status = STATUS_SUCCESS;
-//
-//	DbgPrint("my_ioctl_say_goodbye called\n");
-//
-//	status = STATUS_UNSUCCESSFUL;
-//
-//	Irp->IoStatus.Status = status;
-//	Irp->IoStatus.Information = 0;
-//
-//	return status;
-//}
