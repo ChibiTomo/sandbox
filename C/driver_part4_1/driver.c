@@ -106,6 +106,7 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	BOOLEAN mutexHeld = FALSE;
 
 	DbgPrint("my_ioctl called\n");
+	DbgPrint("Attached device: 0x%08X\n", deviceObject->AttachedDevice);
 
 	device_context_t* context = (device_context_t*) deviceObject->DeviceExtension;
 	status = KeWaitForMutexObject(&(context->mutex), Executive, KernelMode, FALSE, NULL);

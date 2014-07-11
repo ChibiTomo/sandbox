@@ -196,131 +196,72 @@ NTSTATUS STDCALL ExampleFilter_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
  **********************************************************************/
 NTSTATUS STDCALL ExampleFilter_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS NtStatus = STATUS_SUCCESS;
-//    NTSTATUS NtStatus = STATUS_BUFFER_TOO_SMALL;
-//    PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
-//    PIO_STACK_LOCATION pIoStackIrp = NULL;
-//    PCHAR pReadDataBuffer;
-//
-//    DbgPrint("ExampleFilter_Read Called \r\n");
-//
-//    /*
-//     * We want to process this IRP.  Our filter driver's functionality is to remove all NULL's from the
-//     * returned strings and add one only to the end of the string returned.  This ensures that if we
-//     * return strings without NULL's that they are given NULL's and if we provide an array of NULL terminated
-//     * strings that they are all displayed.  This is essentially the functionality we will add in this
-//     * simple example.
-//     *
-//     * When we want to process an IRP after we pass it down we need to do two things the first is we need to
-//     * call IoCopyCurrentIrpStackLocationToNext() and set a completetion routine.
-//     */
-//    pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
-//
-//    IoCopyCurrentIrpStackLocationToNext(Irp);
-//    IoSetCompletionRoutine(Irp, (PIO_COMPLETION_ROUTINE) ExampleFilter_CompletionRoutine, NULL, TRUE, TRUE, TRUE);
-//
-//   /*
-//    * IoCallDriver() simply calls the appropriate entry point in the driver object associated
-//    * with the device object.  This is how drivers are basically "chained" together, they must know
-//    * that there are lower driver so they can perform the appropriate action and send down the IRP.
-//    *
-//    * They do not have to send the IRP down they could simply process it completely themselves if they wish.
-//    */
-//
-//    NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
-//
-//    /*
-//     * Please note that our implementation here is a simple one.  We do not take into account PENDING IRP's or
-//     * anything complicated.  We assume that once we get to this locaiton the IRP has already been completed and
-//     * our completetion routine was called or it wasn't completed and we are still able to complete it here.
-//     *
-//     * Our completetion routine makes sure that the IRP is still valid here.
-//     *
-//     */
-//
-//    if(NT_SUCCESS(NtStatus))
-//    {
-//        /*
-//         * Data was read?
-//         */
-//        if(Irp->IoStatus.Information)
-//        {
-//            /*
-//             * Our filter device is dependent upon the compliation settings of how we compiled example.sys
-//             * That means we need to dynamically figure out if we're using Direct, Buffered or Neither.
-//             */
-//            if(DeviceObject->Flags & DO_BUFFERED_IO)
-//            {
-//
-//                    DbgPrint("ExampleFilter_Read - Use Buffered I/O \r\n");
-//                    /*
-//                     * Implementation for Buffered I/O
-//                     */
-//
-//                    pReadDataBuffer = (PCHAR)Irp->AssociatedIrp.SystemBuffer;
-//
-//                    if(pReadDataBuffer && pIoStackIrp->Parameters.Read.Length > 0)
-//                    {
-//                        ExampleFilter_FixNullString(pReadDataBuffer, (UINT)Irp->IoStatus.Information);
-//                    }
-//            }
-//            else
-//            {
-//                if(DeviceObject->Flags & DO_DIRECT_IO)
-//                {
-//                    DbgPrint("ExampleFilter_Read - Use Direct I/O \r\n");
-//                    /*
-//                     * Implementation for Direct I/O
-//                     */
-//                    if(pIoStackIrp && Irp->MdlAddress)
-//                    {
-//                        pReadDataBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
-//
-//                        if(pReadDataBuffer && pIoStackIrp->Parameters.Read.Length)
-//                        {
-//                            ExampleFilter_FixNullString(pReadDataBuffer, (UINT)Irp->IoStatus.Information);
-//                        }
-//                    }
-//                }
-//                else
-//                {
-//
-//                    DbgPrint("ExampleFilter_Read - Use Neither I/O \r\n");
-//
-//                    /*
-//                     * Implementation for Neither I/O
-//                     */
-//                    __try {
-//
-//                            if(pIoStackIrp->Parameters.Read.Length > 0 && Irp->UserBuffer)
-//                            {
-//
-//                                ProbeForWrite(Irp->UserBuffer, pIoStackIrp->Parameters.Read.Length, TYPE_ALIGNMENT(char));
-//                                pReadDataBuffer = Irp->UserBuffer;
-//
-//                                ExampleFilter_FixNullString(pReadDataBuffer, (UINT)Irp->IoStatus.Information);
-//                            }
-//
-//                        } __except( EXCEPTION_EXECUTE_HANDLER ) {
-//
-//                              NtStatus = GetExceptionCode();
-//                        }
-//                }
-//            }
-//
-//        }
-//    }
-//
-//    /*
-//     * Complete the IRP
-//     *
-//     */
 
-    Irp->IoStatus.Status = NtStatus;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	DbgPrint("ExampleFilter_Read Called \r\n");
 
-    DbgPrint("ExampleFilter_Read Exit 0x%0x \r\n", NtStatus);
+	PEXAMPLE_FILTER_EXTENSION pExampleFilterDeviceContext = (PEXAMPLE_FILTER_EXTENSION)DeviceObject->DeviceExtension;
+	PCHAR pReadDataBuffer;
+	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+	if (!pIoStackIrp) {
+		DbgPrint("No Irp location\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
 
-    return NtStatus;
+	IoCopyCurrentIrpStackLocationToNext(Irp);
+	IoSetCompletionRoutine(Irp, (PIO_COMPLETION_ROUTINE) ExampleFilter_CompletionRoutine, NULL, TRUE, TRUE, TRUE);
+
+	NtStatus = IoCallDriver(pExampleFilterDeviceContext->pNextDeviceInChain, Irp);
+	if(!NT_SUCCESS(NtStatus)) {
+		DbgPrint("Cannot pass down Irp\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
+
+	if(!Irp->IoStatus.Information) {
+		DbgPrint("No data read\n");
+		NtStatus = STATUS_UNSUCCESSFUL;
+		goto cleanup;
+	}
+
+	if(DeviceObject->Flags & DO_BUFFERED_IO) {
+		DbgPrint("ExampleFilter_Read - Use Buffered I/O\n");
+
+		pReadDataBuffer = (PCHAR) Irp->AssociatedIrp.SystemBuffer;
+
+		if(pReadDataBuffer && pIoStackIrp->Parameters.Read.Length > 0) {
+			ExampleFilter_FixNullString(pReadDataBuffer, (UINT)Irp->IoStatus.Information);
+		}
+	} else if(DeviceObject->Flags & DO_DIRECT_IO) {
+		DbgPrint("ExampleFilter_Read - Use Direct I/O\n");
+
+		if(pIoStackIrp && Irp->MdlAddress) {
+			pReadDataBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+
+			if(pReadDataBuffer && pIoStackIrp->Parameters.Read.Length) {
+				ExampleFilter_FixNullString(pReadDataBuffer, (UINT)Irp->IoStatus.Information);
+			}
+		}
+	} else {
+		DbgPrint("ExampleFilter_Read - Use Neither I/O \r\n");
+//		__try {
+//			if(pIoStackIrp->Parameters.Read.Length > 0 && Irp->UserBuffer) {
+//				ProbeForWrite(Irp->UserBuffer, pIoStackIrp->Parameters.Read.Length, TYPE_ALIGNMENT(char));
+//				pReadDataBuffer = Irp->UserBuffer;
+//
+//				ExampleFilter_FixNullString(pReadDataBuffer, (UINT)Irp->IoStatus.Information);
+//			}
+//		} __except( EXCEPTION_EXECUTE_HANDLER ) {
+//			NtStatus = GetExceptionCode();
+//		}
+	}
+
+cleanup:
+	Irp->IoStatus.Status = NtStatus;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+	DbgPrint("ExampleFilter_Read Exit 0x%0x \r\n", NtStatus);
+	return NtStatus;
 }
 
 /**********************************************************************

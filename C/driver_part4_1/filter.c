@@ -91,6 +91,10 @@ NTSTATUS STDCALL my_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	BOOLEAN doCompleteIrp = TRUE;
 
 	DbgPrint("my_ioctl called\n");
+	DbgPrint("Attached device: 0x%08X\n", deviceObject->AttachedDevice);
+
+	device_extension_t* device_extension = (device_extension_t*) deviceObject->DeviceExtension;
+	DbgPrint("device_extension->next=0x%08X\n", device_extension->next);
 
 	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 	if(!pIoStackIrp) {
