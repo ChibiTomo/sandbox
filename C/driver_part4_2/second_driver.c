@@ -58,10 +58,12 @@ VOID STDCALL my_unload(PDRIVER_OBJECT driverObject) {
 	RtlInitUnicodeString(&dosDeviceName, SECOND_DOSDEVICE_PATH);
 	IoDeleteSymbolicLink(&dosDeviceName);
 
+	// Get the second device
 	PDEVICE_OBJECT device = driverObject->DeviceObject;
 
 	while (device) {
 		PDEVICE_OBJECT device_to_delete = device;
+		// Get the first device
 		device = device->NextDevice;
 
 		// Check if the device is attached to an other one
@@ -69,6 +71,7 @@ VOID STDCALL my_unload(PDRIVER_OBJECT driverObject) {
 		device_extension_t* device_extension = (device_extension_t*) device_to_delete->DeviceExtension;
 		DbgPrint("device_extension->next=0x%08X\n", device_extension->next);
 		if (device_extension->next) {
+			// This is the second device
 			DbgPrint("Can detach device\n");
 			IoDetachDevice(device_extension->next);
 		}
@@ -101,6 +104,9 @@ void try_attach_to_other_driver(PDRIVER_OBJECT driverObject) {
 	// Attach the filter device in the device stack
 	DbgPrint("About to attach device\n");
 	status = IoAttachDevice(deviceObject, &deviceToFilter, &device_extension->next);
+	DbgPrint("Attached device: 0x%08X\n", deviceObject->AttachedDevice);
+	DbgPrint("device_extension->next=0x%08X\n", device_extension->next);
+
 	if (status != STATUS_SUCCESS) {
 		DbgPrint("Cannot attach device\n");
 		goto cleanup;
@@ -126,6 +132,8 @@ cleanup:
 NTSTATUS STDCALL my_unsuported_function(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_NOT_SUPPORTED;
 
+	DbgPrint("deviceObject: 0x%08X\n", deviceObject);
+
 	PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 	if (!pIoStackIrp) {
 		DbgPrint("Unsuported function called without Irp location\n");
@@ -144,6 +152,7 @@ NTSTATUS STDCALL my_create(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_create called\n");
+	DbgPrint("deviceObject: 0x%08X\n", deviceObject);
 
 	Irp->IoStatus.Status = status;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -154,6 +163,7 @@ NTSTATUS STDCALL my_close(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_close called\n");
+	DbgPrint("deviceObject: 0x%08X\n", deviceObject);
 
 	Irp->IoStatus.Status = status;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -193,10 +203,13 @@ NTSTATUS my_ioctl_say_hello(PIRP Irp, PDEVICE_OBJECT deviceObject) {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	DbgPrint("my_ioctl_say_hello called\n");
+	DbgPrint("deviceObject=0x%08X\n", deviceObject);
 
 	PDRIVER_OBJECT driver = deviceObject->DriverObject;
 	PDEVICE_OBJECT device = driver->DeviceObject;
-	while(device) {
+	DbgPrint("driver->DeviceObject=0x%08X\n", driver->DeviceObject);
+
+	while (device) {
 		PDEVICE_OBJECT currentDevice = device;
 		DbgPrint("currentDevice=0x%08X\n", currentDevice);
 		device = device->NextDevice;
@@ -226,7 +239,7 @@ NTSTATUS say_hello(PDEVICE_OBJECT deviceObject) {
 	DbgPrint("Say Hello to 0x%08X\n", deviceObject);
 
 	PIRP myIrp = IoAllocateIrp(deviceObject->StackSize, FALSE);
-	if(!myIrp) {
+	if (!myIrp) {
 		DbgPrint("Cannot allocate Irp\n");
 		status = STATUS_INSUFFICIENT_RESOURCES;
 		goto cleanup;
@@ -242,9 +255,7 @@ NTSTATUS say_hello(PDEVICE_OBJECT deviceObject) {
 	pMyIoStackLocation->MajorFunction = IRP_MJ_INTERNAL_DEVICE_CONTROL;
 	pMyIoStackLocation->Parameters.DeviceIoControl.IoControlCode = MY_INTERNAL_IOCTL_HELLO;
 
-	char buffer[BUFFER_SIZE];
-	char* msg = "Hello you!";
-	RtlCopyMemory(buffer, msg, BUFFER_SIZE - 1);
+	char buffer[BUFFER_SIZE] = "Hello you!";
 
 	pMyIoStackLocation->Parameters.DeviceIoControl.InputBufferLength  = BUFFER_SIZE;
 	pMyIoStackLocation->Parameters.DeviceIoControl.OutputBufferLength = BUFFER_SIZE;
