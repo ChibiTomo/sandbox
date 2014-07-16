@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <winsock.h>
 #include <stdio.h>
+#include <conio.h>
 
 #define MY_HOST_NAME "127.0.0.1"
 #define CLIENT_NICKNAME "Yannis"
@@ -60,7 +61,7 @@ SOCKET connect_to_host() {
 	if (retVal == INVALID_SOCKET) {
 		printf("Cannot connect to host: " MY_HOST_NAME "\n");
 		closesocket(my_socket);
-		my_socket == INVALID_SOCKET;
+		my_socket = INVALID_SOCKET;
 		goto cleanup;
 	}
 

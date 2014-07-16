@@ -2,6 +2,7 @@
 #include <winsock.h>
 #include <stdio.h>
 #include <string.h>
+#include <conio.h>
 
 #define NAME_SIZE 1024
 #define BUFFER_SIZE 1024
@@ -30,7 +31,9 @@ void run(SOCKET server_socket);
 BOOLEAN process_socket_wait(server_info_t* server_info);
 void process_incomming_sockets(server_info_t* server_info);
 void new_client_broadcast(SOCKET clt_socket, server_info_t* server_info);
+client_info_t* create_new_client(SOCKET new_client_socket, SOCKADDR_IN* newClientSockAddr);
 void process_chat_broadcast(server_info_t* server_info);
+void broadcast(client_info_t* clt_info, server_info_t* server_info, char* buffer);
 void free_client_list(server_info_t* server_info);
 void free_winsock();
 
@@ -136,11 +139,11 @@ int display_local_ip(SOCKADDR_IN* socket_addrs) {
 		socket_addrs->sin_addr.s_addr = *((long *) host->h_addr);
 	}
 
-	printf("Server IP = %i.%i.%i.%i\n", socket_addrs->sin_addr.s_addr & 0xFF,
+	printf("Server IP = %lu.%lu.%lu.%lu\n", socket_addrs->sin_addr.s_addr & 0xFF,
 										socket_addrs->sin_addr.s_addr>>8 & 0xFF,
 										socket_addrs->sin_addr.s_addr>>16 & 0xFF,
 										socket_addrs->sin_addr.s_addr>>24 & 0xFF);
-	printf("Server port = %i\n", htons(socket_addrs->sin_port));
+	printf("Server port = %d\n", htons(socket_addrs->sin_port));
 
 cleanup:
 	return result;
@@ -216,7 +219,7 @@ void process_incomming_sockets(server_info_t* server_info) {
 
 	server_info->dataSockets--;
 
-	UINT length = sizeof(SOCKADDR_IN);
+	int length = sizeof(SOCKADDR_IN);
 	SOCKADDR_IN newClientSockAddr = {0};
 	SOCKET newClient = accept(server_info->socket, (struct sockaddr *) &newClientSockAddr, &length);
 	if(newClient == INVALID_SOCKET) {
@@ -225,14 +228,50 @@ void process_incomming_sockets(server_info_t* server_info) {
 	}
 
 	new_client_broadcast(newClient, server_info);
-	//client_info_t* clt_info = create_new_client(newClient, &newClientSockAddr);
+	client_info_t* clt_info = create_new_client(newClient, &newClientSockAddr);
+
+	if(!clt_info) {
+		printf("Server memory error\n");
+		closesocket(newClient);
+		return;
+	}
+
+	if(!server_info->clt_info_list) {
+		server_info->clt_info_list = clt_info;
+		return;
+	}
+
+	client_info_t* clt_info_walker = server_info->clt_info_list;
+	while(clt_info_walker->next) {
+		clt_info_walker = clt_info_walker->next;
+	}
+
+	clt_info_walker->next = clt_info;
+}
+
+client_info_t* create_new_client(SOCKET new_client_socket, SOCKADDR_IN* newClientSockAddr) {
+	client_info_t* client_info = (client_info_t*) LocalAlloc(LMEM_ZEROINIT, sizeof(client_info_t));
+
+	if (!client_info) {
+		printf("Cannot allocate client info.\n");
+		goto cleanup;
+	}
+	client_info->socket = new_client_socket;
+	client_info->sockAddr = *newClientSockAddr;
+
+	printf("Connected IP = %lu.%lu.%lu.%lu\n", client_info->sockAddr.sin_addr.s_addr&0xFF,
+												client_info->sockAddr.sin_addr.s_addr>>8 & 0xFF,
+												client_info->sockAddr.sin_addr.s_addr>>16 & 0xFF,
+												client_info->sockAddr.sin_addr.s_addr>>24 & 0xFF);
+
+cleanup:
+	return client_info;
 }
 
 void new_client_broadcast(SOCKET clt_socket, server_info_t* server_info) {
-	printf("Broadcasting the connection of a new client\n");
+	printf("Broadcasting the connection of a new client.\n");
 	char buffer[BUFFER_SIZE] = {0};
 	client_info_t* client_info;
-
 
 	client_info = server_info->clt_info_list;
 
@@ -254,6 +293,60 @@ cleanup:
 }
 
 void process_chat_broadcast(server_info_t* server_info) {
+	client_info_t* clt_info = server_info->clt_info_list;
+
+	client_info_t* prev_clt_info = NULL;
+	char buffer[BUFFER_SIZE];
+	while(server_info->dataSockets && clt_info) {
+		if (!FD_ISSET(clt_info->socket, &server_info->stReadFDS)) {
+			prev_clt_info = clt_info;
+			clt_info = clt_info->next;
+		}
+
+		server_info->dataSockets--;
+		int retVal = recv(clt_info->socket, buffer, BUFFER_SIZE, 0);
+
+		if (retVal == 0 || retVal == SOCKET_ERROR) {
+			if(clt_info->setNick) {
+				sprintf(buffer, "***** %s Has Left the chat line\n", clt_info->nick);
+				broadcast(clt_info, server_info, buffer);
+			}
+			closesocket(clt_info->socket);
+
+			if (prev_clt_info) {
+				prev_clt_info->next = clt_info->next;
+				LocalFree(clt_info);
+				clt_info = prev_clt_info->next;
+			} else {
+				server_info->clt_info_list = clt_info->next;
+				LocalFree(clt_info);
+				clt_info = server_info->clt_info_list;
+			}
+			continue;
+		}
+
+		buffer[retVal] = 0;
+		if(!clt_info->setNick) {
+			strcpy(clt_info->nick, buffer);
+			sprintf(buffer, "*** %s has joined the chat line\n", clt_info->nick);
+			clt_info->setNick = TRUE;
+		}
+
+		broadcast(clt_info, server_info, buffer);
+		prev_clt_info = clt_info;
+		clt_info = clt_info->next;
+	}
+}
+
+void broadcast(client_info_t* clt_info, server_info_t* server_info, char* buffer) {
+	client_info_t* clt_runner = server_info->clt_info_list;
+
+	while(clt_runner) {
+		if(clt_runner != clt_info) {
+			send(clt_runner->socket, buffer, strlen(buffer) + 1, 0);
+		}
+		clt_runner = clt_runner->next;
+	}
 }
 
 void free_client_list(server_info_t* server_info) {
