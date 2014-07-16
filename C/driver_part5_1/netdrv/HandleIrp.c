@@ -1,5 +1,5 @@
 /**********************************************************************
- * 
+ *
  *  Toby Opferman
  *
  *  Handling IRP Library
@@ -7,19 +7,17 @@
  *  This example is for educational purposes only.  I license this source
  *  out for use in learning how to write a device driver.
  *
- *  Copyright (c) 2005, All Rights Reserved  
+ *  Copyright (c) 2005, All Rights Reserved
  **********************************************************************/
 
-
-#define _X86_ 
-
-#include <wdm.h>
+#include <ntddk.h>
 #include "kmem.h"
 #include "handleirp.h"
+#include "drvmisc.h"
 
 
 typedef struct _IRPLIST *PIRPLIST;
- 
+
 typedef struct _IRPLIST
 {
     PIRP pIrp;
@@ -36,22 +34,14 @@ typedef struct _IRPLISTHEAD
     ULONG ulPoolTag;
     PIRPLIST pListFront;
     PIRPLIST pListBack;
-    
+
 } IRPLISTHEAD, *PIRPLISTHEAD;
 
 
 
-/* #pragma alloc_text(PAGE, HandleIrp_FreeIrpListWithCleanUp) */
-/* #pragma alloc_text(PAGE, HandleIrp_AddIrp)  */
-/* #pragma alloc_text(PAGE, HandleIrp_RemoveNextIrp) */
-#pragma alloc_text(PAGE, HandleIrp_CreateIrpList)
-#pragma alloc_text(PAGE, HandleIrp_FreeIrpList) 
-/* #pragma alloc_text(PAGE, HandleIrp_PerformCancel) */
-
-
 
 /**********************************************************************
- * 
+ *
  *  HandleIrp_CreateIrpList
  *
  *    This function creates an IRP List Head context.
@@ -77,7 +67,7 @@ PIRPLISTHEAD HandleIrp_CreateIrpList(ULONG ulPoolTag)
 }
 
 /**********************************************************************
- * 
+ *
  *  HandleIrp_FreeIrpList
  *
  *    This function frees an IRP List Head.
@@ -88,7 +78,7 @@ PIRPLISTHEAD HandleIrp_CreateIrpList(ULONG ulPoolTag)
 NTSTATUS HandleIrp_FreeIrpList(PIRPLISTHEAD pIrpListHead)
 {
     NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
-    
+
     if(pIrpListHead->pListBack == NULL && pIrpListHead->pListFront == NULL)
     {
         NtStatus = STATUS_SUCCESS;
@@ -101,7 +91,7 @@ NTSTATUS HandleIrp_FreeIrpList(PIRPLISTHEAD pIrpListHead)
 }
 
 /**********************************************************************
- * 
+ *
  *  HandleIrp_FreeIrpListWithCleanUp
  *
  *    This function cancels the IRP List Head.
@@ -113,10 +103,9 @@ void HandleIrp_FreeIrpListWithCleanUp(PIRPLISTHEAD pIrpListHead)
 {
     PIRPLIST pIrpListCurrent;
     KIRQL kOldIrql;
-    PDRIVER_CANCEL pCancelRoutine;
 
     KeAcquireSpinLock(&pIrpListHead->kspIrpListLock, &kOldIrql);
-    
+
     pIrpListCurrent  = pIrpListHead->pListFront;
 
     while(pIrpListCurrent)
@@ -125,7 +114,7 @@ void HandleIrp_FreeIrpListWithCleanUp(PIRPLISTHEAD pIrpListHead)
          * To remove an IRP from the Queue we first want to
          * reset the cancel routine.
          */
-        pCancelRoutine = IoSetCancelRoutine(pIrpListCurrent->pIrp, NULL);
+        IoSetCancelRoutine(pIrpListCurrent->pIrp, NULL);
 
         pIrpListHead->pListFront = pIrpListCurrent->pNextIrp;
 
@@ -135,8 +124,8 @@ void HandleIrp_FreeIrpListWithCleanUp(PIRPLISTHEAD pIrpListHead)
         }
 
         KeReleaseSpinLock(&pIrpListHead->kspIrpListLock, kOldIrql);
-            
-        pIrpListCurrent->pfnCleanUpIrp(pIrpListCurrent->pIrp, pIrpListCurrent->pContext);   
+
+        pIrpListCurrent->pfnCleanUpIrp(pIrpListCurrent->pIrp, pIrpListCurrent->pContext);
 
         DbgPrint("HandleIrp_FreeIrpListWithCleanUp Complete Free Memory = 0x%0x \r\n", pIrpListCurrent);
 
@@ -144,7 +133,7 @@ void HandleIrp_FreeIrpListWithCleanUp(PIRPLISTHEAD pIrpListHead)
         pIrpListCurrent = NULL;
 
         KeAcquireSpinLock(&pIrpListHead->kspIrpListLock, &kOldIrql);
-        
+
         pIrpListCurrent  = pIrpListHead->pListFront;
     }
 
@@ -155,7 +144,7 @@ void HandleIrp_FreeIrpListWithCleanUp(PIRPLISTHEAD pIrpListHead)
 }
 
 /**********************************************************************
- * 
+ *
  *  HandleIrp_AddIrp
  *
  *    This function adds an IRP to the IRP List.
@@ -165,7 +154,6 @@ NTSTATUS HandleIrp_AddIrp(PIRPLISTHEAD pIrpListHead, PIRP pIrp, PDRIVER_CANCEL p
 {
     NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
     KIRQL kOldIrql;
-    PDRIVER_CANCEL pCancelRoutine;
     PIRPLIST pIrpList;
 
     pIrpList = (PIRPLIST)KMem_AllocateNonPagedMemory(sizeof(IRPLIST), pIrpListHead->ulPoolTag);
@@ -188,9 +176,9 @@ NTSTATUS HandleIrp_AddIrp(PIRPLISTHEAD pIrpListHead, PIRP pIrp, PDRIVER_CANCEL p
          *     2. This will synchronize adding this IRP to the list with the cancel routine.
          *
          */
-    
+
         KeAcquireSpinLock(&pIrpListHead->kspIrpListLock, &kOldIrql);
-    
+
         /*
          * We will now attempt to set the cancel routine which will be called
          * when (if) the IRP is ever canceled.  This allows us to remove an IRP
@@ -201,7 +189,7 @@ NTSTATUS HandleIrp_AddIrp(PIRPLISTHEAD pIrpListHead, PIRP pIrp, PDRIVER_CANCEL p
          * as long as it has not been completed.  Once it has been completed this is
          * when it is no longer valid (while we own it).  So, while we own the IRP we need
          * to complete it at some point.  The reason for setting a cancel routine is to realize
-         * that the IRP has been canceled and complete it immediately and get rid of it.  
+         * that the IRP has been canceled and complete it immediately and get rid of it.
          * We don't want to do processing for an IRP that has been canceled as the result
          * will just be thrown away.
          *
@@ -212,24 +200,24 @@ NTSTATUS HandleIrp_AddIrp(PIRPLISTHEAD pIrpListHead, PIRP pIrp, PDRIVER_CANCEL p
          * to complete the IRP unconditionally.  This is fine as long as you have some type of synchronization
          * since you DO NOT WANT TO COMPLETE AN IRP TWICE!!!!!!
          */
-    
+
         IoSetCancelRoutine(pIrp, pIrpList->pfnCancelRoutine);
-    
+
         /*
          * We have set our cancel routine.  Now, check if the IRP has already been canceled.
          *
          * We must set the cancel routine before checking this to ensure that once we queue
          * the IRP it will definately be called if the IRP is ever canceled.
          */
-    
+
         if(pIrp->Cancel)
         {
             /*
              * If the IRP has been canceled we can then check if our cancel routine has been
              * called.
              */
-            pCancelRoutine = IoSetCancelRoutine(pIrp, NULL);
-    
+            IoSetCancelRoutine(pIrp, NULL);
+
             /*
              * if pCancelRoutine == NULL then our cancel routine has been called.
              * if pCancelRoutine != NULL then our cancel routine has not been called.
@@ -247,7 +235,7 @@ NTSTATUS HandleIrp_AddIrp(PIRPLISTHEAD pIrpListHead, PIRP pIrp, PDRIVER_CANCEL p
              *
              */
             KeReleaseSpinLock(&pIrpListHead->kspIrpListLock, kOldIrql);
-    
+
             /*
              * We are going to allow the clean up function to complete the IRP.
              */
@@ -263,7 +251,7 @@ NTSTATUS HandleIrp_AddIrp(PIRPLISTHEAD pIrpListHead, PIRP pIrp, PDRIVER_CANCEL p
 
 
             pIrpList->pNextIrp      = NULL;
-            
+
             IoMarkIrpPending(pIrp);
 
             if(pIrpListHead->pListBack)
@@ -288,13 +276,13 @@ NTSTATUS HandleIrp_AddIrp(PIRPLISTHEAD pIrpListHead, PIRP pIrp, PDRIVER_CANCEL p
          */
         pfnCleanUpIrp(pIrp, pContext);
     }
-    
 
-    return NtStatus;      
+
+    return NtStatus;
 }
 
 /**********************************************************************
- * 
+ *
  *  HandleIrp_RemoveNextIrp
  *
  *    This function removes the next valid IRP.
@@ -304,11 +292,10 @@ PIRP HandleIrp_RemoveNextIrp(PIRPLISTHEAD pIrpListHead)
 {
     PIRP pIrp = NULL;
     KIRQL kOldIrql;
-    PDRIVER_CANCEL pCancelRoutine;
     PIRPLIST pIrpListCurrent;
 
     KeAcquireSpinLock(&pIrpListHead->kspIrpListLock, &kOldIrql);
-    
+
     pIrpListCurrent  = pIrpListHead->pListFront;
 
     while(pIrpListCurrent && pIrp == NULL)
@@ -317,7 +304,7 @@ PIRP HandleIrp_RemoveNextIrp(PIRPLISTHEAD pIrpListHead)
          * To remove an IRP from the Queue we first want to
          * reset the cancel routine.
          */
-        pCancelRoutine = IoSetCancelRoutine(pIrpListCurrent->pIrp, NULL);
+        IoSetCancelRoutine(pIrpListCurrent->pIrp, NULL);
 
         /*
          * The next phase is to determine if this IRP has been canceled
@@ -344,7 +331,7 @@ PIRP HandleIrp_RemoveNextIrp(PIRPLISTHEAD pIrpListHead)
             }
 
             KeReleaseSpinLock(&pIrpListHead->kspIrpListLock, kOldIrql);
-            
+
             pIrpListCurrent->pfnCleanUpIrp(pIrpListCurrent->pIrp, pIrpListCurrent->pContext);
 
             DbgPrint("HandleIrp_RemoveNextIrp Complete Free Memory = 0x%0x \r\n", pIrpListCurrent);
@@ -352,7 +339,7 @@ PIRP HandleIrp_RemoveNextIrp(PIRPLISTHEAD pIrpListHead)
             pIrpListCurrent = NULL;
 
             KeAcquireSpinLock(&pIrpListHead->kspIrpListLock, &kOldIrql);
-            
+
             pIrpListCurrent  = pIrpListHead->pListFront;
 
         }
@@ -374,7 +361,7 @@ PIRP HandleIrp_RemoveNextIrp(PIRPLISTHEAD pIrpListHead)
             pIrpListCurrent = NULL;
 
             KeAcquireSpinLock(&pIrpListHead->kspIrpListLock, &kOldIrql);
-            
+
         }
     }
 
@@ -385,7 +372,7 @@ PIRP HandleIrp_RemoveNextIrp(PIRPLISTHEAD pIrpListHead)
 }
 
 /**********************************************************************
- * 
+ *
  *  HandleIrp_PerformCancel
  *
  *    This function removes the specified IRP from the list.
@@ -398,7 +385,7 @@ NTSTATUS HandleIrp_PerformCancel(PIRPLISTHEAD pIrpListHead, PIRP pIrp)
     PIRPLIST pIrpListCurrent, pIrpListPrevious;
 
     KeAcquireSpinLock(&pIrpListHead->kspIrpListLock, &kOldIrql);
-    
+
     pIrpListPrevious = NULL;
     pIrpListCurrent  = pIrpListHead->pListFront;
 
@@ -422,7 +409,7 @@ NTSTATUS HandleIrp_PerformCancel(PIRPLISTHEAD pIrpListHead, PIRP pIrp)
             }
 
             KeReleaseSpinLock(&pIrpListHead->kspIrpListLock, kOldIrql);
-            
+
             NtStatus = STATUS_SUCCESS;
 
             /*

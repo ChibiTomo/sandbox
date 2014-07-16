@@ -1,68 +1,35 @@
-TARGET = netdrv
-TARGETDIR = ..\..\..\..\..\bin
+CFLAGS = -Wall -Werror -I/mingw/include/ddk -I../inc -std=gnu99 -Wno-multichar
+DRIVER_SRC = entry.c functions.c HandleIrp.c kmem.c tdifuncs.c
+DRIVER_OBJ = $(DRIVER_SRC:.c=.o)
+HEADER = handleirp.h kmem.h tdiexample.h tdifuncs.h ../inc/drvmisc.h
 
-ASM = ml
-CPP = cl
-RSC = rc.exe
-F90 = df.exe
-MTL = midl.exe
-REBASE = rebase.exe
+driver: $(DRIVER_OBJ)
+	gcc -Wl,--base-file,driver.base \
+		-Wl,--subsystem,native \
+		-Wl,--entry,_DriverEntry@8 \
+		-nostartfiles -nostdlib \
+		-o junk.tmp \
+		$(DRIVER_OBJ) \
+		-lntoskrnl -lhal
+	rm junk.tmp
+	dlltool --dllname my_driver.sys \
+		--base-file driver.base --output-exp driver.exp
+	rm driver.base
+	gcc -mdll \
+		-Wl,--entry,_DriverEntry@8 \
+		-Wl,--subsystem,native \
+		-Wl,--image-base,0x10000 \
+		-Wl,--file-alignment,0x1000 \
+		-Wl,--section-alignment,0x1000 \
+		-Wl,--stack,0x40000 \
+		-Wl,driver.exp \
+		-nostdlib -nostartfiles \
+		-o my_driver.sys \
+		$(DRIVER_OBJ) \
+		-lntoskrnl -lhal
 
-OBJDIR = .\obj\i386
+.c.o: $(HEADER)
+	gcc $(CFLAGS) -c $< -o $@
 
-ASM_PROJ=/coff /c /Fo$(OBJDIR)\\
-
-
-
-CPP_PROJ=/nologo /MD /W3 /Oxs /Gz /Zi \
-	/I "..\..\..\..\..\inc" \
-        /I "..\inc"  \
-	/I "\NTDDK\inc" \
-        /I "\NTDDK\inc\ddk" \
-        /D "WIN32" /D "_WINDOWS" \
-	/Fr$(OBJDIR)\\ /Fo$(OBJDIR)\\ /Fd$(OBJDIR)\\ /c
-
-LIB32= link.exe 
-LIB32_FLAGS = /LIBPATH:..\..\..\..\..\lib /LIBPATH:\NTDDK\libfre\i386 /DEBUG /PDB:$(TARGETDIR)\SYMBOLS\$(TARGET).PDB  -entry:DriverEntry  /SUBSYSTEM:NATIVE /nologo $(LIBS) /out:$(TARGETDIR)\$(TARGET).sys
-
-
-
-OBJS   = \
-	$(OBJDIR)\entry.obj \
-	$(OBJDIR)\functions.obj \
-	$(OBJDIR)\handleirp.obj \
-	$(OBJDIR)\kmem.obj \
-	$(OBJDIR)\tdifuncs.obj
-
-LIBS = \
-       wdm.lib \
-       ntoskrnl.lib
- 
-# This is a comment
-$(TARGETDIR)\$(TARGET): $(OBJDIR) $(TARGETDIR) $(OBJS) $(RESFILE)
-    $(LIB32) $(LIB32_FLAGS) $(OBJS) $(LIBS) $(RESFILE)
-    $(REBASE) -b 0x00400000 -x $(TARGETDIR)\SYMBOLS -a $(TARGETDIR)\$(TARGET)
-
-{.\}.c{$(OBJDIR)}.obj::
-	$(CPP) $(CPP_PROJ) $<
-
-{.\}.cpp{$(OBJDIR)}.obj::
-	$(CPP) $(CPP_PROJ) $<
-
-
-{.\}.asm{$(OBJDIR)}.obj::
-	$(ASM) $(ASM_PROJ) $<
-
-
-{.\}.rc{$(OBJDIR)}.res::
-	$(RSC) $(RES_PROJ) $<
-
-$(OBJDIR):
-    if not exist "$(OBJDIR)/$(NULL)" mkdir "$(OBJDIR)"
-
-$(TARGETDIR):
-    if not exist "$(TARGETDIR)/$(NULL)" mkdir "$(TARGETDIR)"
-
-
-CLEAN:
-	-@erase /S /Q $(OBJDIR)
+clean:
+	rm -rf *.o *.exe *.sys *.base *.tmp *.exp

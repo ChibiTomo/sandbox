@@ -1,5 +1,5 @@
 /**********************************************************************
- * 
+ *
  *  Toby Opferman
  *
  *  Driver Example
@@ -22,14 +22,14 @@ typedef char * PCHAR;
 /* #define __USE_DIRECT__ */
 #define __USE_BUFFERED__
 
-NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS TdiExample_CleanUp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS TdiExample_Close(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS TdiExample_IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS TdiExample_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS TdiExample_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS TdiExample_UnSupportedFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-NTSTATUS TdiExample_IoControlInternal(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL TdiExample_CleanUp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL TdiExample_Close(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL TdiExample_IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL TdiExample_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL TdiExample_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL TdiExample_UnSupportedFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS STDCALL TdiExample_IoControlInternal(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 
 

@@ -1,5 +1,5 @@
 /**********************************************************************
- * 
+ *
  *  Toby Opferman
  *
  *  Example Driver
@@ -7,13 +7,10 @@
  *  This example is for educational purposes only.  I license this source
  *  out for use in learning how to write a device driver.
  *
- *  Copyright (c) 2005, All Rights Reserved  
+ *  Copyright (c) 2005, All Rights Reserved
  **********************************************************************/
 
-
-#define _X86_ 
-
-#include <wdm.h>
+#include <ntddk.h>
 #include <tdi.h>
 #include <tdikrnl.h>
 #include <netdrv.h>
@@ -21,15 +18,17 @@
 #include "tdiexample.h"
 #include "handleirp.h"
 #include "tdifuncs.h"
+#include "my_ntdef.h"
+#include "drvmisc.h"
 
 
 typedef enum
 {
     CS_NOT_CONNECTED,
     CS_CONNECTING,
-    CS_CONNECTED,    
+    CS_CONNECTED,
     CS_DISCONNECTING
-                                           
+
 } CONNECTION_STATUS;
 
 typedef struct _TDI_EXAMPLE_CONTEXT
@@ -43,7 +42,7 @@ typedef struct _TDI_EXAMPLE_CONTEXT
     KEVENT kWakeWriteIrpThread;
     KEVENT kInitEvent;
     NTSTATUS NtThreadStatus;
-    BOOLEAN bWriteThreadAlive;       
+    BOOLEAN bWriteThreadAlive;
     PFILE_OBJECT pWriteThread;
 
 } TDI_EXAMPLE_CONTEXT, *PTDI_EXAMPLE_CONTEXT;
@@ -53,30 +52,15 @@ typedef struct _TDI_EXAMPLE_CONTEXT
 /**********************************************************************
  * Internal Functions
  **********************************************************************/
- 
- VOID TdiExample_CancelRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp); 
- VOID TdiExample_IrpCleanUp(PIRP pIrp, PVOID pContext);
+
+ VOID STDCALL TdiExample_CancelRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp);
+ VOID STDCALL TdiExample_IrpCleanUp(PIRP pIrp, PVOID pContext);
  NTSTATUS TdiExample_Connect(PTDI_EXAMPLE_CONTEXT pTdiExampleContext, PVOID pAddressContext, UINT uiLength);
  NTSTATUS TdiExample_Disconnect(PTDI_EXAMPLE_CONTEXT pTdiExampleContext);
- VOID TdiExample_WorkItem(PDEVICE_OBJECT  DeviceObject, PVOID  Context);
- VOID TdiExample_NetworkWriteThread(PVOID StartContext);
+ VOID STDCALL TdiExample_WorkItem(PDEVICE_OBJECT  DeviceObject, PVOID  Context);
+ VOID STDCALL TdiExample_NetworkWriteThread(PVOID StartContext);
  NTSTATUS TdiExample_ClientEventReceive(PVOID TdiEventContext, CONNECTION_CONTEXT ConnectionContext, ULONG ReceiveFlags, ULONG  BytesIndicated, ULONG  BytesAvailable, ULONG  *BytesTaken, PVOID  Tsdu, PIRP  *IoRequestPacket);
 
-#pragma alloc_text(PAGE, TdiExample_NetworkWriteThread)
-#pragma alloc_text(PAGE, TdiExample_WorkItem)
-#pragma alloc_text(PAGE, TdiExample_Disconnect)
-#pragma alloc_text(PAGE, TdiExample_IrpCleanUp)
-/* #pragma alloc_text(PAGE, TdiExample_CancelRoutine) */
-#pragma alloc_text(PAGE, TdiExample_IoControlInternal)
-#pragma alloc_text(PAGE, TdiExample_Create) 
-#pragma alloc_text(PAGE, TdiExample_Close) 
-#pragma alloc_text(PAGE, TdiExample_IoControl) 
-#pragma alloc_text(PAGE, TdiExample_Read)
-#pragma alloc_text(PAGE, TdiExample_Write)
-#pragma alloc_text(PAGE, TdiExample_UnSupportedFunction)
-#pragma alloc_text(PAGE, TdiExample_Connect)
-/* #pragma alloc_text(PAGE, TdiExample_ClientEventReceive) */
-                                
 #define STATUS_CONTINUE_COMPLETION  STATUS_SUCCESS
 #define TDIEXAMPLE_POOL_TAG         ((ULONG)'EidT')
 #define READ_IRPLIST_POOL_TAG       ((ULONG)'RprI')
@@ -84,13 +68,13 @@ typedef struct _TDI_EXAMPLE_CONTEXT
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_Create
  *
  *    This is called when an instance of this driver is created (CreateFile)
  *
  **********************************************************************/
-NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS STDCALL TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_INSUFFICIENT_RESOURCES;
     PIO_STACK_LOCATION pIoStackIrp = NULL;
@@ -101,7 +85,7 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
     pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 
-    /* 
+    /*
      * We need to allocate our instance context for this handle.  This
      * data structure will be associated with this user mode handle.
      *
@@ -110,7 +94,7 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
      *
      */
 
-    pTdiExampleContext = (PTDI_EXAMPLE_CONTEXT)KMem_AllocateNonPagedMemory(sizeof(TDI_EXAMPLE_CONTEXT), TDIEXAMPLE_POOL_TAG);
+    pTdiExampleContext = (PTDI_EXAMPLE_CONTEXT) KMem_AllocateNonPagedMemory(sizeof(TDI_EXAMPLE_CONTEXT), TDIEXAMPLE_POOL_TAG);
 
     if(pTdiExampleContext)
     {
@@ -124,6 +108,7 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
         if(pTdiExampleContext->pWriteIrpListHead && pTdiExampleContext->pReadIrpListHead)
         {
+            DbgPrint("Read and Write Irp lists created\n");
             /*
              * We need to maintain a state for this handle which will help us to know
              * if a Read or Write request should be ignored or performed for example.
@@ -131,14 +116,14 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
              * We obviously start with not connected.
              */
             pTdiExampleContext->csConnectionState = CS_NOT_CONNECTED;
-    
+
             /*
              * We have our own TDI Client Driver library which allows us to simply
              * call functions to initate connections, etc.  The first thing we need to do
              * is create a TdiHandle context which can then be used in other TDI Library Calls.
              */
             NtStatus = TdiFuncs_InitializeTransportHandles(&pTdiExampleContext->TdiHandle);
-    
+
             if(NT_SUCCESS(NtStatus))
             {
                 NtStatus = TdiFuncs_SetEventHandler(pTdiExampleContext->TdiHandle.pfoTransport, TDI_EVENT_RECEIVE, TdiExample_ClientEventReceive, (PVOID)pTdiExampleContext);
@@ -149,7 +134,7 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 PIO_WORKITEM pIoWorkItem;
 
                 /*
-                 * We need to initialize our locks and events for this handle.  
+                 * We need to initialize our locks and events for this handle.
                  *
                  * The Connection Lock is used to Synchronize access to connecting and disconnecting
                  *
@@ -162,17 +147,17 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                  * kInitEvent is used to synchronize initialization and notify when the work item has
                  * signaled that the thread has been created.
                  *
-                 * The bWriteThreadAlive variable is used to tell the thread it should exit. 
+                 * The bWriteThreadAlive variable is used to tell the thread it should exit.
                  */
                 KeInitializeMutex(&pTdiExampleContext->kConnectionLock, 0);
-                
+
                 KeInitializeEvent(&pTdiExampleContext->kWriteIrpReady, SynchronizationEvent, FALSE);
-                KeInitializeEvent(&pTdiExampleContext->kWakeWriteIrpThread, SynchronizationEvent, FALSE); 
-                KeInitializeEvent(&pTdiExampleContext->kInitEvent, NotificationEvent, FALSE); 
-                    
-                pTdiExampleContext->bWriteThreadAlive = TRUE;   
-                
-                /* 
+                KeInitializeEvent(&pTdiExampleContext->kWakeWriteIrpThread, SynchronizationEvent, FALSE);
+                KeInitializeEvent(&pTdiExampleContext->kInitEvent, NotificationEvent, FALSE);
+
+                pTdiExampleContext->bWriteThreadAlive = TRUE;
+
+                /*
                  * We want to create a SYSTEM thread so we can handle our Writes Asynchronously.
                  * The problem is that we can't call PsCreateSystemThread() outside of the SYSTEM
                  * process on Windows 2000.  On Windows XP/2003 we can by using the object attributes,
@@ -191,12 +176,12 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 {
 
                     IoQueueWorkItem(pIoWorkItem, TdiExample_WorkItem, DelayedWorkQueue, (PVOID)pTdiExampleContext);
-                    
-                    /* 
+
+                    /*
                      * Wait for the work item to complete creating the thread.
                      */
                     KeWaitForSingleObject(&pTdiExampleContext->kInitEvent, Executive, KernelMode, FALSE, NULL);
-                    
+
                     NtStatus = pTdiExampleContext->NtThreadStatus;
 
                     /*
@@ -230,7 +215,6 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
                     KMem_FreeNonPagedMemory(pTdiExampleContext);
                 }
-
             }
             else
             {
@@ -255,7 +239,6 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             DbgPrint("TdiExample_Create Free = 0x%0x \r\n", pTdiExampleContext);
 
             KMem_FreeNonPagedMemory(pTdiExampleContext);
-
         }
     }
 
@@ -265,18 +248,17 @@ NTSTATUS TdiExample_Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     DbgPrint("TdiExample_Create Exit 0x%0x \r\n", NtStatus);
-
     return NtStatus;
 }
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_WorkItem
  *
  *    This is executed in the context of the SYSTEM process.
  *
  **********************************************************************/
-VOID TdiExample_WorkItem(PDEVICE_OBJECT  DeviceObject, PVOID  Context)
+VOID STDCALL TdiExample_WorkItem(PDEVICE_OBJECT  DeviceObject, PVOID  Context)
 {
    PTDI_EXAMPLE_CONTEXT pTdiExampleContext = (PVOID)Context;
    HANDLE WriteThreadHandle;
@@ -293,7 +275,7 @@ VOID TdiExample_WorkItem(PDEVICE_OBJECT  DeviceObject, PVOID  Context)
      * IRPs.
      */
     pTdiExampleContext->NtThreadStatus = PsCreateSystemThread(&WriteThreadHandle, 0, NULL, NULL, NULL, TdiExample_NetworkWriteThread, (PVOID)pTdiExampleContext);
-    
+
     if(NT_SUCCESS(pTdiExampleContext->NtThreadStatus))
     {
         /*
@@ -309,14 +291,14 @@ VOID TdiExample_WorkItem(PDEVICE_OBJECT  DeviceObject, PVOID  Context)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_NetworkWriteThread
  *
  *    This is executed in the context of the SYSTEM process.
  *    This is where we perform our Network Writes
  *
  **********************************************************************/
-VOID TdiExample_NetworkWriteThread(PVOID StartContext)
+VOID STDCALL TdiExample_NetworkWriteThread(PVOID StartContext)
 {
     PTDI_EXAMPLE_CONTEXT pTdiExampleContext = (PVOID)StartContext;
     PVOID pEvents[2];
@@ -355,7 +337,7 @@ VOID TdiExample_NetworkWriteThread(PVOID StartContext)
                  Irp = HandleIrp_RemoveNextIrp(pTdiExampleContext->pWriteIrpListHead);
 
                  if(Irp)
-                 {  
+                 {
                     NTSTATUS NtStatus;
                     UINT uiDataSent;
                     PIO_STACK_LOCATION pIoStackLocation = IoGetCurrentIrpStackLocation(Irp);
@@ -363,7 +345,7 @@ VOID TdiExample_NetworkWriteThread(PVOID StartContext)
                     Irp->Tail.Overlay.DriverContext[0] = NULL;
 
                     bMoreIrps = TRUE;
-                    
+
                     NtStatus = TdiFuncs_Send(pTdiExampleContext->TdiHandle.pfoConnection, Irp->AssociatedIrp.SystemBuffer, pIoStackLocation->Parameters.Write.Length, &uiDataSent);
 
                     Irp->IoStatus.Status      = NtStatus;
@@ -392,7 +374,7 @@ VOID TdiExample_NetworkWriteThread(PVOID StartContext)
  *    This is actually IRP_MJ_CLEANUP so we can release the IRP's.
  *
  **********************************************************************/
-NTSTATUS TdiExample_CleanUp(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS STDCALL TdiExample_CleanUp(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_SUCCESS;
     PIO_STACK_LOCATION pIoStackIrp = NULL;
@@ -429,7 +411,7 @@ NTSTATUS TdiExample_CleanUp(PDEVICE_OBJECT DeviceObject, PIRP Irp)
         ObDereferenceObject(pTdiExampleContext->pWriteThread);
 
         pTdiExampleContext->pWriteThread = NULL;
-                
+
         /*
          * If the handle is connected disconnect.  We no longer
          * require the connection lock since we are currently closing this handle.
@@ -444,7 +426,7 @@ NTSTATUS TdiExample_CleanUp(PDEVICE_OBJECT DeviceObject, PIRP Irp)
          * Free Handles, IRPs, etc.
          */
         TdiFuncs_FreeHandles(&pTdiExampleContext->TdiHandle);
-        
+
         HandleIrp_FreeIrpListWithCleanUp(pTdiExampleContext->pReadIrpListHead);
         HandleIrp_FreeIrpListWithCleanUp(pTdiExampleContext->pWriteIrpListHead);
 
@@ -461,22 +443,21 @@ NTSTATUS TdiExample_CleanUp(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
     DbgPrint("TdiExample_CleanUp Exit 0x%0x \r\n", NtStatus);
 
-    
+
     return NtStatus;
 }
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_IoControlInternal
  *
  *    These are IOCTL's which can only be sent by other drivers.
  *
  **********************************************************************/
-NTSTATUS TdiExample_IoControlInternal(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS STDCALL TdiExample_IoControlInternal(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
-    PIO_STACK_LOCATION pIoStackIrp = NULL;
 
     DbgPrint("TdiExample_IoControlInternal Called \r\n");
 
@@ -493,30 +474,30 @@ NTSTATUS TdiExample_IoControlInternal(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_IoControl
  *
  *    This is called when an IOCTL is issued on the device handle (DeviceIoControl)
  *
  **********************************************************************/
-NTSTATUS TdiExample_IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS STDCALL TdiExample_IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
     PIO_STACK_LOCATION pIoStackIrp = NULL;
     PTDI_EXAMPLE_CONTEXT pTdiExampleContext = NULL;
-    
+
     DbgPrint("TdiExample_IoControl Called \r\n");
 
     /*
      * Each time the IRP is passed down the driver stack a new stack location is added
      * specifying certain parameters for the IRP to the driver.
      */
-    pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);    
+    pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
 
     if(pIoStackIrp) /* Should Never Be NULL! */
     {
         DbgPrint("Example_IoControl Called IOCTL = 0x%0x\r\n", pIoStackIrp->Parameters.DeviceIoControl.IoControlCode);
-        
+
         pTdiExampleContext = (PTDI_EXAMPLE_CONTEXT)pIoStackIrp->FileObject->FsContext;
 
         switch(pIoStackIrp->Parameters.DeviceIoControl.IoControlCode)
@@ -524,10 +505,10 @@ NTSTATUS TdiExample_IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             case IOCTL_TDIEXAMPLE_CONNECT:
                  NtStatus = TdiExample_Connect(pTdiExampleContext, Irp->AssociatedIrp.SystemBuffer, pIoStackIrp->Parameters.DeviceIoControl.InputBufferLength);
                  break;
-            
-            case IOCTL_TDIEXAMPLE_DISCONNECT:
-                 NtStatus = TdiExample_Disconnect(pTdiExampleContext);
-                 break;
+
+//            case IOCTL_TDIEXAMPLE_DISCONNECT:
+//                 NtStatus = TdiExample_Disconnect(pTdiExampleContext);
+//                 break;
 
         }
     }
@@ -549,14 +530,14 @@ NTSTATUS TdiExample_IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_Write
  *
  *    This is called when a write is issued on the device handle (WriteFile/WriteFileEx)
  *
  *
  **********************************************************************/
-NTSTATUS TdiExample_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS STDCALL TdiExample_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
     PIO_STACK_LOCATION pIoStackIrp = NULL;
@@ -564,13 +545,13 @@ NTSTATUS TdiExample_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 
     DbgPrint("TdiExample_Write Called 0x%0x\r\n", Irp);
-    
+
     /*
      * Each time the IRP is passed down the driver stack a new stack location is added
      * specifying certain parameters for the IRP to the driver.
      */
-    pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);    
-    
+    pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+
     pTdiExampleContext = (PTDI_EXAMPLE_CONTEXT)pIoStackIrp->FileObject->FsContext;
 
     if(pTdiExampleContext->csConnectionState == CS_CONNECTED)
@@ -579,7 +560,7 @@ NTSTATUS TdiExample_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp)
          * We can use the "Overlay.DriverContext" data on the IRP to use driver specific contexts
          * onto an IRP but only WHILE WE OWN THE IRP.  Since we will be owning this IRP
          * we can use this as the context we can find in our cancel routine.  The problem
-         * is that we cannot use teh IO_STACK_LOCATION in the cancel routine since we 
+         * is that we cannot use teh IO_STACK_LOCATION in the cancel routine since we
          * can't be guarentteed what the current stack location is when the cancel
          * routine is called.
          *
@@ -597,29 +578,29 @@ NTSTATUS TdiExample_Write(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     }
     else
     {
-    
+
         Irp->IoStatus.Status      = NtStatus;
         Irp->IoStatus.Information = 0;
-    
+
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
     }
 
     DbgPrint("TdiExample_Write Exit 0x%0x \r\n", NtStatus);
 
-    
+
     return NtStatus;
 }
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_Read
  *
  *    This is called when a read is issued on the device handle (ReadFile/ReadFileEx)
  *
  *
  **********************************************************************/
-NTSTATUS TdiExample_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS STDCALL TdiExample_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_BUFFER_TOO_SMALL;
     PIO_STACK_LOCATION pIoStackIrp = NULL;
@@ -631,21 +612,21 @@ NTSTATUS TdiExample_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
      * Each time the IRP is passed down the driver stack a new stack location is added
      * specifying certain parameters for the IRP to the driver.
      */
-    pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);    
-    
+    pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+
     pTdiExampleContext = (PTDI_EXAMPLE_CONTEXT)pIoStackIrp->FileObject->FsContext;
 
-/*    
+/*
      To keep the example simple we will allow read requests to be queued before
      the user is connected so that we can get any initial data that is sent to us.
-     
+
      if(pTdiExampleContext->csConnectionState == CS_CONNECTED)
     {*/
         /*
          * We can use the "Overlay.DriverContext" data on the IRP to use driver specific contexts
          * onto an IRP but only WHILE WE OWN THE IRP.  Since we will be owning this IRP
          * we can use this as the context we can find in our cancel routine.  The problem
-         * is that we cannot use teh IO_STACK_LOCATION in the cancel routine since we 
+         * is that we cannot use teh IO_STACK_LOCATION in the cancel routine since we
          * can't be guarentteed what the current stack location is when the cancel
          * routine is called.
          *
@@ -662,10 +643,10 @@ NTSTATUS TdiExample_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
   /*  }
     else
     {
-    
+
         Irp->IoStatus.Status      = NtStatus;
         Irp->IoStatus.Information = 0;
-    
+
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
     } */
 
@@ -676,13 +657,13 @@ NTSTATUS TdiExample_Read(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_Close
  *
  *    This function is called to close the handle
  *
  **********************************************************************/
-NTSTATUS TdiExample_Close(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS STDCALL TdiExample_Close(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_SUCCESS;
     DbgPrint("TdiExample_Close Called \r\n");
@@ -693,37 +674,45 @@ NTSTATUS TdiExample_Close(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-    DbgPrint("TdiExample_Close Exit 0x%0x \r\n", NtStatus);    
-    
+    DbgPrint("TdiExample_Close Exit 0x%0x \r\n", NtStatus);
+
     return NtStatus;
 }
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_UnSupportedFunction
  *
  *    This is called when a major function is issued that isn't supported.
  *
  **********************************************************************/
-NTSTATUS TdiExample_UnSupportedFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+NTSTATUS STDCALL TdiExample_UnSupportedFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     NTSTATUS NtStatus = STATUS_NOT_SUPPORTED;
-    DbgPrint("TdiExample_UnSupportedFunction Called \r\n");
 
+    PIO_STACK_LOCATION pIoStackIrp = IoGetCurrentIrpStackLocation(Irp);
+    if (!pIoStackIrp)
+{
+        DbgPrint("TdiExample_UnSupportedFunction Called\n");
+        NtStatus = STATUS_UNSUCCESSFUL;
+        goto cleanup;
+    }
+    DbgPrint("TdiExample_UnSupportedFunction Called: 0x%02X\n", pIoStackIrp->MajorFunction);
 
+cleanup:
     Irp->IoStatus.Status      = NtStatus;
     Irp->IoStatus.Information = 0;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-    DbgPrint("TdiExample_UnSupportedFunction Exit 0x%0x \r\n", NtStatus);    
-    
+    DbgPrint("TdiExample_UnSupportedFunction Exit 0x%0x \r\n", NtStatus);
+
     return NtStatus;
 }
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_CancelRoutine
  *
  *    This function is called if the IRP is ever canceled
@@ -731,7 +720,7 @@ NTSTATUS TdiExample_UnSupportedFunction(PDEVICE_OBJECT DeviceObject, PIRP Irp)
  *    CancelIo() from user mode, IoCancelIrp() from the Kernel
  *
  **********************************************************************/
-VOID TdiExample_CancelRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp)
+VOID STDCALL TdiExample_CancelRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp)
 {
     PIRPLISTHEAD pIrpListHead = NULL;
 
@@ -740,7 +729,7 @@ VOID TdiExample_CancelRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp)
      */
 
     IoReleaseCancelSpinLock(pIrp->CancelIrql);
-    
+
     DbgPrint("TdiExample_CancelRoutine Called IRP = 0x%0x \r\n", pIrp);
 
     /*
@@ -750,7 +739,7 @@ VOID TdiExample_CancelRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp)
 
     pIrpListHead = (PIRPLISTHEAD)pIrp->Tail.Overlay.DriverContext[0];
     pIrp->Tail.Overlay.DriverContext[0] = NULL;
-    
+
     /*
      * We can then just throw the IRP to the PerformCancel
      * routine since it will find it in the queue, remove it and
@@ -766,7 +755,7 @@ VOID TdiExample_CancelRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_Connect
  *
  *    This function connects to a server.
@@ -774,6 +763,7 @@ VOID TdiExample_CancelRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp)
  **********************************************************************/
 NTSTATUS TdiExample_Connect(PTDI_EXAMPLE_CONTEXT pTdiExampleContext, PVOID pAddressContext, UINT uiLength)
 {
+    DbgPrint("TdiExample_Connect\n");
     NTSTATUS NtStatus = STATUS_UNSUCCESSFUL;
     PNETWORK_ADDRESS pNetworkAddress = (PNETWORK_ADDRESS)pAddressContext;
 
@@ -785,6 +775,7 @@ NTSTATUS TdiExample_Connect(PTDI_EXAMPLE_CONTEXT pTdiExampleContext, PVOID pAddr
 
     if(uiLength >= sizeof(NETWORK_ADDRESS) && pTdiExampleContext->csConnectionState == CS_NOT_CONNECTED)
     {
+        DbgPrint("About to connect\n");
         /*
          * We are not connected, we need to connect so we set an intermediate state
          * so that while the mutex is released any other threads checking the state will know
@@ -806,6 +797,7 @@ NTSTATUS TdiExample_Connect(PTDI_EXAMPLE_CONTEXT pTdiExampleContext, PVOID pAddr
         }
         else
         {
+		DbgPrint("Not connected\n");
             pTdiExampleContext->csConnectionState = CS_NOT_CONNECTED;
         }
     }
@@ -816,7 +808,7 @@ NTSTATUS TdiExample_Connect(PTDI_EXAMPLE_CONTEXT pTdiExampleContext, PVOID pAddr
 }
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_Disconnect
  *
  *    This function disconnects from a server.
@@ -845,7 +837,7 @@ NTSTATUS TdiExample_Disconnect(PTDI_EXAMPLE_CONTEXT pTdiExampleContext)
         pTdiExampleContext->csConnectionState = CS_DISCONNECTING;
 
         KeReleaseMutex(&pTdiExampleContext->kConnectionLock, FALSE);
-        
+
         NtStatus = TdiFuncs_Disconnect(pTdiExampleContext->TdiHandle.pfoConnection);
         KeWaitForMutexObject(&pTdiExampleContext->kConnectionLock, Executive, KernelMode, FALSE, NULL);
 
@@ -860,14 +852,14 @@ NTSTATUS TdiExample_Disconnect(PTDI_EXAMPLE_CONTEXT pTdiExampleContext)
 }
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_IrpCleanUp
  *
  *    This function is called to clean up the IRP if it is ever
  *    canceled after we have given it to the queueing routines.
  *
  **********************************************************************/
-VOID TdiExample_IrpCleanUp(PIRP pIrp, PVOID pContext)
+VOID STDCALL TdiExample_IrpCleanUp(PIRP pIrp, PVOID pContext)
 {
     pIrp->IoStatus.Status      = STATUS_CANCELLED;
     pIrp->IoStatus.Information = 0;
@@ -880,7 +872,7 @@ VOID TdiExample_IrpCleanUp(PIRP pIrp, PVOID pContext)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiExample_ClientEventReceive
  *
  *    This function is called when data is recieved.
@@ -897,14 +889,14 @@ NTSTATUS TdiExample_ClientEventReceive(PVOID TdiEventContext, CONNECTION_CONTEXT
 
 
     *BytesTaken = BytesAvailable;
-    
+
     /*
      * This implementation is extremely simple.  We do not queue data if we do not have
      * an IRP to put it there.  We also assume we always get the full data packet
      * sent every recieve.  These are Bells and Whistles that can easily be added to
      * any implementation but would help to make the implementation more complex and
      * harder to follow the underlying idea.  Since those essentially are common-sense
-     * add ons they are ignored and the general implementation of how to Queue IRP's and 
+     * add ons they are ignored and the general implementation of how to Queue IRP's and
      * recieve data are implemented.
      *
      */

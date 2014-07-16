@@ -1,24 +1,11 @@
-/**********************************************************************
- * 
- *  Toby Opferman
- *
- *  Example TDI Interface
- *
- *  This example is for educational purposes only.  I license this source
- *  out for use in learning how to write a device driver.
- *
- *  Copyright (c) 2005, All Rights Reserved  
- **********************************************************************/
-
-
-#define _X86_ 
-
 typedef unsigned int UINT;
 
-#include <wdm.h>
+#include <ntddk.h>
 #include <tdi.h>
 #include <tdikrnl.h>
 #include "tdifuncs.h"
+#include "my_ntdef.h"
+#include "drvmisc.h"
 
 typedef struct _TDI_COMPLETION_CONTEXT
 {
@@ -30,22 +17,9 @@ typedef struct _TDI_COMPLETION_CONTEXT
 #define STATUS_CONTINUE_COMPLETION  STATUS_SUCCESS
 #endif
 
- 
-#pragma alloc_text(PAGE, TdiFuncs_InitializeTransportHandles)
-#pragma alloc_text(PAGE, TdiFuncs_FreeHandles)
-#pragma alloc_text(PAGE, TdiFuncs_Send)
-/* #pragma alloc_text(PAGE, TdiFuncs_CompleteIrp) */
-#pragma alloc_text(PAGE, TdiFuncs_Connect)
-#pragma alloc_text(PAGE, TdiFuncs_Disconnect)
-#pragma alloc_text(PAGE, TdiFuncs_CloseTdiOpenHandle)
-#pragma alloc_text(PAGE, TdiFuncs_DisAssociateTransportAndConnection)
-#pragma alloc_text(PAGE, TdiFuncs_AssociateTransportAndConnection)
-#pragma alloc_text(PAGE, TdiFuncs_OpenTransportAddress)
-#pragma alloc_text(PAGE, TdiFuncs_SetEventHandler)
-
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_InitializeTransportHandles
  *
  *    This function encapsulates all the dirty work of initializing
@@ -62,7 +36,7 @@ NTSTATUS TdiFuncs_InitializeTransportHandles(PTDI_HANDLE pTdiHandle)
 
     if(NT_SUCCESS(NtStatus))
     {
-        /* 
+        /*
          *  The second step is to create a connection endpoint
          */
 
@@ -100,7 +74,7 @@ NTSTATUS TdiFuncs_InitializeTransportHandles(PTDI_HANDLE pTdiHandle)
 }
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_FreeHandles
  *
  *    This function destroys the handles
@@ -111,18 +85,18 @@ void TdiFuncs_FreeHandles(PTDI_HANDLE pTdiHandle)
      TdiFuncs_DisAssociateTransportAndConnection(pTdiHandle->pfoConnection);
      TdiFuncs_CloseTdiOpenHandle(pTdiHandle->hConnection, pTdiHandle->pfoConnection);
      TdiFuncs_CloseTdiOpenHandle(pTdiHandle->hTransport, pTdiHandle->pfoTransport);
-    
+
      pTdiHandle->hConnection   = NULL;
      pTdiHandle->hTransport    = NULL;
-    
+
      pTdiHandle->pfoConnection = NULL;
      pTdiHandle->pfoTransport  = NULL;
 }
 
- 
- 
+
+
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_OpenTransportAddress
  *
  *    This is the first step in creating a connection you need to
@@ -140,7 +114,7 @@ NTSTATUS TdiFuncs_OpenTransportAddress(PHANDLE pTdiHandle, PFILE_OBJECT *pFileOb
     UINT dwEASize = 0;
     PTRANSPORT_ADDRESS pTransportAddress = NULL;
     PTDI_ADDRESS_IP pTdiAddressIp = NULL;
-    
+
     /*
      * Initialize the name of the device to be opened.  ZwCreateFile takes an
      * OBJECT_ATTRIBUTES structure as the name of the device to open.  This is then
@@ -186,7 +160,7 @@ NTSTATUS TdiFuncs_OpenTransportAddress(PHANDLE pTdiHandle, PFILE_OBJECT *pFileOb
      pTdiAddressIp = (TDI_ADDRESS_IP *)&pTransportAddress->Address[0].Address;
 
      /*
-      * The TDI_ADDRESS_IP data structure is essentially simmilar to the usermode sockets data structure. 
+      * The TDI_ADDRESS_IP data structure is essentially simmilar to the usermode sockets data structure.
       *
       *    sin_port
       *    sin_zero
@@ -209,7 +183,7 @@ NTSTATUS TdiFuncs_OpenTransportAddress(PHANDLE pTdiHandle, PFILE_OBJECT *pFileOb
 
      if(NT_SUCCESS(NtStatus))
      {
-          NtStatus = ObReferenceObjectByHandle(*pTdiHandle, GENERIC_READ | GENERIC_WRITE, NULL, KernelMode, (PVOID *)pFileObject, NULL);      
+          NtStatus = ObReferenceObjectByHandle(*pTdiHandle, GENERIC_READ | GENERIC_WRITE, NULL, KernelMode, (PVOID *)pFileObject, NULL);
 
           if(!NT_SUCCESS(NtStatus))
           {
@@ -224,7 +198,7 @@ NTSTATUS TdiFuncs_OpenTransportAddress(PHANDLE pTdiHandle, PFILE_OBJECT *pFileOb
 
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_OpenConnection
  *
  *    This is the second step in creating a connection you need to
@@ -240,7 +214,7 @@ NTSTATUS TdiFuncs_OpenConnection(PHANDLE pTdiHandle, PFILE_OBJECT *pFileObject)
     char DataBlob[sizeof(FILE_FULL_EA_INFORMATION) + TDI_CONNECTION_CONTEXT_LENGTH + 300] = {0};
     PFILE_FULL_EA_INFORMATION pExtendedAttributesInformation = (PFILE_FULL_EA_INFORMATION)&DataBlob;
     UINT dwEASize = 0;
-        
+
     /*
      * Initialize the name of the device to be opened.  ZwCreateFile takes an
      * OBJECT_ATTRIBUTES structure as the name of the device to open.  This is then
@@ -272,7 +246,7 @@ NTSTATUS TdiFuncs_OpenConnection(PHANDLE pTdiHandle, PFILE_OBJECT *pFileObject)
 
      if(NT_SUCCESS(NtStatus))
      {
-          NtStatus = ObReferenceObjectByHandle(*pTdiHandle, GENERIC_READ | GENERIC_WRITE, NULL, KernelMode, (PVOID *)pFileObject, NULL);      
+          NtStatus = ObReferenceObjectByHandle(*pTdiHandle, GENERIC_READ | GENERIC_WRITE, NULL, KernelMode, (PVOID *)pFileObject, NULL);
 
           if(!NT_SUCCESS(NtStatus))
           {
@@ -285,7 +259,7 @@ NTSTATUS TdiFuncs_OpenConnection(PHANDLE pTdiHandle, PFILE_OBJECT *pFileObject)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_AssociateTransportAndConnection
  *
  *    This is called to associate the transport with the connection
@@ -296,7 +270,8 @@ NTSTATUS TdiFuncs_AssociateTransportAndConnection(HANDLE hTransportAddress, PFIL
 {
     NTSTATUS NtStatus = STATUS_INSUFFICIENT_RESOURCES;
     PIRP pIrp;
-    IO_STATUS_BLOCK IoStatusBlock = {0};
+    IO_STATUS_BLOCK IoStatusBlock;
+    memset(&IoStatusBlock, 0, sizeof(IO_STATUS_BLOCK));
     PDEVICE_OBJECT pTdiDevice;
     TDI_COMPLETION_CONTEXT TdiCompletionContext;
 
@@ -304,11 +279,11 @@ NTSTATUS TdiFuncs_AssociateTransportAndConnection(HANDLE hTransportAddress, PFIL
 
     /*
      * The TDI Device Object is required to send these requests to the TDI Driver.
-     * 
+     *
      */
 
     pTdiDevice = IoGetRelatedDeviceObject(pfoConnection);
-    
+
     /*
      * Step 1: Build the IRP.  TDI defines several macros and functions that can quickly
      *         create IRP's, etc. for variuos purposes.  While this can be done manually
@@ -351,7 +326,7 @@ NTSTATUS TdiFuncs_AssociateTransportAndConnection(HANDLE hTransportAddress, PFIL
 
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_SetEventHandler
  *
  *    This is called to set an Event Handler Callback
@@ -361,21 +336,22 @@ NTSTATUS TdiFuncs_SetEventHandler(PFILE_OBJECT pfoTdiFileObject, LONG InEventTyp
 {
     NTSTATUS NtStatus = STATUS_INSUFFICIENT_RESOURCES;
     PIRP pIrp;
-    IO_STATUS_BLOCK IoStatusBlock = {0};
+    IO_STATUS_BLOCK IoStatusBlock;
+    memset(&IoStatusBlock, 0, sizeof(IO_STATUS_BLOCK));
     PDEVICE_OBJECT pTdiDevice;
-    LARGE_INTEGER TimeOut = {0};
-    UINT NumberOfSeconds = 60*3;
+    LARGE_INTEGER TimeOut;
+    memset(&TimeOut, 0, sizeof(LARGE_INTEGER));
     TDI_COMPLETION_CONTEXT TdiCompletionContext;
 
     KeInitializeEvent(&TdiCompletionContext.kCompleteEvent, NotificationEvent, FALSE);
 
     /*
      * The TDI Device Object is required to send these requests to the TDI Driver.
-     * 
+     *
      */
 
     pTdiDevice = IoGetRelatedDeviceObject(pfoTdiFileObject);
-    
+
     /*
      * Step 1: Build the IRP.  TDI defines several macros and functions that can quickly
      *         create IRP's, etc. for variuos purposes.  While this can be done manually
@@ -409,7 +385,7 @@ NTSTATUS TdiFuncs_SetEventHandler(PFILE_OBJECT pfoTdiFileObject, LONG InEventTyp
             /*
              * Find the Status of the completed IRP
              */
-    
+
             NtStatus = IoStatusBlock.Status;
         }
 
@@ -419,7 +395,7 @@ NTSTATUS TdiFuncs_SetEventHandler(PFILE_OBJECT pfoTdiFileObject, LONG InEventTyp
 }
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_Connect
  *
  *    This is called to make a connection with a remote computer
@@ -430,11 +406,13 @@ NTSTATUS TdiFuncs_Connect(PFILE_OBJECT pfoConnection, UINT uiAddress, USHORT uiP
 {
     NTSTATUS NtStatus = STATUS_INSUFFICIENT_RESOURCES;
     PIRP pIrp;
-    IO_STATUS_BLOCK IoStatusBlock = {0};
+    IO_STATUS_BLOCK IoStatusBlock;
+    memset(&IoStatusBlock, 0, sizeof(IO_STATUS_BLOCK));
     PDEVICE_OBJECT pTdiDevice;
     TDI_CONNECTION_INFORMATION  RequestConnectionInfo = {0};
     TDI_CONNECTION_INFORMATION  ReturnConnectionInfo  = {0};
-    LARGE_INTEGER TimeOut = {0};
+    LARGE_INTEGER TimeOut;
+    memset(&TimeOut, 0, sizeof(LARGE_INTEGER));
     UINT NumberOfSeconds = 60*3;
     char cBuffer[256] = {0};
     PTRANSPORT_ADDRESS pTransportAddress = (PTRANSPORT_ADDRESS)&cBuffer;
@@ -445,11 +423,11 @@ NTSTATUS TdiFuncs_Connect(PFILE_OBJECT pfoConnection, UINT uiAddress, USHORT uiP
 
     /*
      * The TDI Device Object is required to send these requests to the TDI Driver.
-     * 
+     *
      */
 
     pTdiDevice = IoGetRelatedDeviceObject(pfoConnection);
-    
+
     /*
      * Step 1: Build the IRP.  TDI defines several macros and functions that can quickly
      *         create IRP's, etc. for variuos purposes.  While this can be done manually
@@ -479,13 +457,13 @@ NTSTATUS TdiFuncs_Connect(PFILE_OBJECT pfoConnection, UINT uiAddress, USHORT uiP
          */
 
         RequestConnectionInfo.RemoteAddress       = (PVOID)pTransportAddress;
-        RequestConnectionInfo.RemoteAddressLength = sizeof(PTRANSPORT_ADDRESS) + sizeof(TDI_ADDRESS_IP); 
+        RequestConnectionInfo.RemoteAddressLength = sizeof(PTRANSPORT_ADDRESS) + sizeof(TDI_ADDRESS_IP);
 
          /*
           * The number of transport addresses
           */
          pTransportAddress->TAAddressCount = 1;
-    
+
          /*
           *  This next piece will essentially describe what the transport being opened is.
           *
@@ -494,13 +472,13 @@ NTSTATUS TdiFuncs_Connect(PFILE_OBJECT pfoConnection, UINT uiAddress, USHORT uiP
           *     Address       =  A data structure that is essentially related to the chosen AddressType.
           *
           */
-    
+
          pTransportAddress->Address[0].AddressType    = TDI_ADDRESS_TYPE_IP;
          pTransportAddress->Address[0].AddressLength  = sizeof(TDI_ADDRESS_IP);
          pTdiAddressIp = (TDI_ADDRESS_IP *)&pTransportAddress->Address[0].Address;
-    
+
          /*
-          * The TDI_ADDRESS_IP data structure is essentially simmilar to the usermode sockets data structure. 
+          * The TDI_ADDRESS_IP data structure is essentially simmilar to the usermode sockets data structure.
           *
           *    sin_port
           *    sin_zero
@@ -516,7 +494,7 @@ NTSTATUS TdiFuncs_Connect(PFILE_OBJECT pfoConnection, UINT uiAddress, USHORT uiP
 
         TdiBuildConnect(pIrp, pTdiDevice, pfoConnection, NULL, NULL, &TimeOut, &RequestConnectionInfo, &ReturnConnectionInfo);
 
-        NtStatus = IoCallDriver(pTdiDevice, pIrp);
+//        NtStatus = IoCallDriver(pTdiDevice, pIrp);
 
         /*
          *  If the status returned is STATUS_PENDING this means that the IRP will not be completed synchronously
@@ -532,7 +510,7 @@ NTSTATUS TdiFuncs_Connect(PFILE_OBJECT pfoConnection, UINT uiAddress, USHORT uiP
             /*
              * Find the Status of the completed IRP
              */
-    
+
             NtStatus = IoStatusBlock.Status;
         }
 
@@ -544,7 +522,7 @@ NTSTATUS TdiFuncs_Connect(PFILE_OBJECT pfoConnection, UINT uiAddress, USHORT uiP
 
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_Send
  *
  *    This API demonstrates how to send data
@@ -554,7 +532,8 @@ NTSTATUS TdiFuncs_Send(PFILE_OBJECT pfoConnection, PVOID pData, UINT uiSendLengt
 {
     NTSTATUS NtStatus = STATUS_INSUFFICIENT_RESOURCES;
     PIRP pIrp;
-    IO_STATUS_BLOCK IoStatusBlock = {0};
+    IO_STATUS_BLOCK IoStatusBlock;
+    memset(&IoStatusBlock, 0, sizeof(IO_STATUS_BLOCK));
     PDEVICE_OBJECT pTdiDevice;
     PMDL pSendMdl;
     TDI_COMPLETION_CONTEXT TdiCompletionContext;
@@ -563,7 +542,7 @@ NTSTATUS TdiFuncs_Send(PFILE_OBJECT pfoConnection, PVOID pData, UINT uiSendLengt
 
     /*
      * The TDI Device Object is required to send these requests to the TDI Driver.
-     * 
+     *
      */
 
     pTdiDevice = IoGetRelatedDeviceObject(pfoConnection);
@@ -579,18 +558,18 @@ NTSTATUS TdiFuncs_Send(PFILE_OBJECT pfoConnection, PVOID pData, UINT uiSendLengt
     if(pSendMdl)
     {
 
-        __try {
+//        __try {
 
             MmProbeAndLockPages(pSendMdl, KernelMode, IoModifyAccess);
 
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-                IoFreeMdl(pSendMdl);
-                pSendMdl = NULL;
-        };
+//        } __except (EXCEPTION_EXECUTE_HANDLER) {
+//                IoFreeMdl(pSendMdl);
+//                pSendMdl = NULL;
+//        };
 
         if(pSendMdl)
         {
-    
+
             /*
              * Step 1: Build the IRP.  TDI defines several macros and functions that can quickly
              *         create IRP's, etc. for variuos purposes.  While this can be done manually
@@ -599,35 +578,35 @@ NTSTATUS TdiFuncs_Send(PFILE_OBJECT pfoConnection, PVOID pData, UINT uiSendLengt
              *  http://msdn.microsoft.com/library/en-us/network/hh/network/34bldmac_f430860a-9ae2-4379-bffc-6b0a81092e7c.xml.asp?frame=true
              */
             pIrp = TdiBuildInternalDeviceControlIrp(TDI_SEND, pTdiDevice, pfoConnection, &TdiCompletionContext.kCompleteEvent, &IoStatusBlock);
-        
+
             if(pIrp)
             {
                 /*
                  * Step 2: Add the correct parameters into the IRP.
                  */
-        
-         
+
+
                 TdiBuildSend(pIrp, pTdiDevice, pfoConnection, NULL, NULL, pSendMdl, 0, uiSendLength);
-        
+
                 NtStatus = IoCallDriver(pTdiDevice, pIrp);
-        
+
                 /*
                  *  If the status returned is STATUS_PENDING this means that the IRP will not be completed synchronously
                  *  and the driver has queued the IRP for later processing.  This is fine but we do not want to return this
                  *  thread, we are a synchronous call so we want to wait until it has completed.  The EVENT that we provided
                  *  will be set when the IRP completes.
                  */
-        
+
                 if(NtStatus == STATUS_PENDING)
                 {
                     KeWaitForSingleObject(&TdiCompletionContext.kCompleteEvent, Executive, KernelMode, FALSE, NULL);
-        
+
                 }
 
                 NtStatus   = IoStatusBlock.Status;
                 *pDataSent = (UINT)IoStatusBlock.Information;
-    
-               /* 
+
+               /*
                 * I/O Manager will free the MDL
                 *
                 if(pSendMdl)
@@ -646,7 +625,7 @@ NTSTATUS TdiFuncs_Send(PFILE_OBJECT pfoConnection, PVOID pData, UINT uiSendLengt
 
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_Disconnect
  *
  *    This is called to disconnect from the remote computer
@@ -657,10 +636,12 @@ NTSTATUS TdiFuncs_Disconnect(PFILE_OBJECT pfoConnection)
 {
     NTSTATUS NtStatus = STATUS_INSUFFICIENT_RESOURCES;
     PIRP pIrp;
-    IO_STATUS_BLOCK IoStatusBlock = {0};
+    IO_STATUS_BLOCK IoStatusBlock;
+    memset(&IoStatusBlock, 0, sizeof(IO_STATUS_BLOCK));
     PDEVICE_OBJECT pTdiDevice;
     TDI_CONNECTION_INFORMATION  ReturnConnectionInfo  = {0};
-    LARGE_INTEGER TimeOut = {0};
+    LARGE_INTEGER TimeOut;
+    memset(&TimeOut, 0, sizeof(LARGE_INTEGER));
     UINT NumberOfSeconds = 60*3;
     TDI_COMPLETION_CONTEXT TdiCompletionContext;
 
@@ -668,11 +649,11 @@ NTSTATUS TdiFuncs_Disconnect(PFILE_OBJECT pfoConnection)
 
     /*
      * The TDI Device Object is required to send these requests to the TDI Driver.
-     * 
+     *
      */
 
     pTdiDevice = IoGetRelatedDeviceObject(pfoConnection);
-    
+
     /*
      * Step 1: Build the IRP.  TDI defines several macros and functions that can quickly
      *         create IRP's, etc. for variuos purposes.  While this can be done manually
@@ -728,7 +709,7 @@ NTSTATUS TdiFuncs_Disconnect(PFILE_OBJECT pfoConnection)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_DisAssociateTransportAndConnection
  *
  *    This is called to disassociate the transport with the connection
@@ -739,7 +720,8 @@ NTSTATUS TdiFuncs_DisAssociateTransportAndConnection(PFILE_OBJECT pfoConnection)
 {
     NTSTATUS NtStatus = STATUS_INSUFFICIENT_RESOURCES;
     PIRP pIrp;
-    IO_STATUS_BLOCK IoStatusBlock = {0};
+    IO_STATUS_BLOCK IoStatusBlock;
+    memset(&IoStatusBlock, 0, sizeof(IO_STATUS_BLOCK));
     PDEVICE_OBJECT pTdiDevice;
     TDI_COMPLETION_CONTEXT TdiCompletionContext;
 
@@ -748,11 +730,11 @@ NTSTATUS TdiFuncs_DisAssociateTransportAndConnection(PFILE_OBJECT pfoConnection)
 
     /*
      * The TDI Device Object is required to send these requests to the TDI Driver.
-     * 
+     *
      */
 
     pTdiDevice = IoGetRelatedDeviceObject(pfoConnection);
-    
+
     /*
      * Step 1: Build the IRP.  TDI defines several macros and functions that can quickly
      *         create IRP's, etc. for variuos purposes.  While this can be done manually
@@ -797,7 +779,7 @@ NTSTATUS TdiFuncs_DisAssociateTransportAndConnection(PFILE_OBJECT pfoConnection)
 
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_CloseTdiOpenHandle
  *
  *    This is called to close open handles.
@@ -819,7 +801,7 @@ NTSTATUS TdiFuncs_CloseTdiOpenHandle(HANDLE hTdiHandle, PFILE_OBJECT pfoTdiFileO
 }
 
 /**********************************************************************
- * 
+ *
  *  TdiFuncs_CompleteIrp
  *
  *    This is called when the IRP is completed
@@ -831,7 +813,7 @@ NTSTATUS TdiFuncs_CompleteIrp(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Conte
 
        Do not mark the IRP as pending, we created it we may overwrite memory locations
        we don't want to !
-    
+
 
     return STATUS_CONTINUE_COMPLETION ;
 }
