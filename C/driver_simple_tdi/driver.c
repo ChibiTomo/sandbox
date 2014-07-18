@@ -110,6 +110,10 @@ NTSTATUS STDCALL my_internal_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 
 		case TDI_SEND:
 			DEBUG("TDI_SEND packet TCP, size: %d\n", pIoStackIrp->Parameters.DeviceIoControl.OutputBufferLength);
+			if (Irp->MdlAddress) {
+				PCHAR buf = (PCHAR) MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+				DEBUG("Content: |%s|\n", buf);
+			}
 			break;
 
 		default:
@@ -195,9 +199,9 @@ void set_network_address(PTDI_ADDRESS_IP address_ip, network_address_t* network_
 
 void convert_to_network_address(network_address_t* network_address, PTDI_ADDRESS_IP address_ip) {
 	network_address->address[0] = address_ip->in_addr & 0x000000FF;
-	network_address->address[1] = (address_ip->in_addr>>8) & 0x000000FF,
-	network_address->address[2] = (address_ip->in_addr>>16) & 0x000000FF,
-	network_address->address[3] = (address_ip->in_addr>>24) & 0x000000FF,
+	network_address->address[1] = (address_ip->in_addr>>8) & 0x000000FF;
+	network_address->address[2] = (address_ip->in_addr>>16) & 0x000000FF;
+	network_address->address[3] = (address_ip->in_addr>>24) & 0x000000FF;
 
 	// Translate port from network order to host order (little endian)
 	network_address->port = address_ip->sin_port & 0x00FF;
