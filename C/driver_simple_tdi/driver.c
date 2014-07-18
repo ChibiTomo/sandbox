@@ -139,13 +139,6 @@ NTSTATUS process_tdi_connect(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 			((PTRANSPORT_ADDRESS) TDI_connectRequest->RequestConnectionInformation->RemoteAddress)->Address;
 	PTDI_ADDRESS_IP TDI_data = (PTDI_ADDRESS_IP) TA_Address_data->Address;
 
-	// Better to do it now: we must process the Irp as quick as possible
-	IoSkipCurrentIrpStackLocation(Irp);
-	extension_t* extension = (extension_t*) deviceObject->DeviceExtension;
-	DEBUG("TDI_CONNECT: Pass down Irp\n");
-	status = IoCallDriver(extension->topOfDeviceStack, Irp );
-	DEBUG("TDI_CONNECT: Back to processing\n");
-
 	DEBUG("Address type: %d\n", TA_Address_data->AddressType);
 	DEBUG("Address length: %d\n", TA_Address_data->AddressLength);
 
@@ -153,11 +146,51 @@ NTSTATUS process_tdi_connect(PDEVICE_OBJECT deviceObject, PIRP Irp) {
 	convert_to_network_address(&network_address, TDI_data);
 
 	DEBUG("TCP address: %i.%i.%i.%i:%i\n", 	network_address.address[0],
-											network_address.address[0],
-											network_address.address[0],
-											network_address.address[0],
+											network_address.address[1],
+											network_address.address[2],
+											network_address.address[3],
 											network_address.port);
+
+	if (network_address.address[0] == 192
+			&& network_address.address[1] == 168
+			&& network_address.address[2] == 154
+			&& network_address.address[3] == 129) { // Virtual machine IP
+
+		DEBUG("Redirecting\n");
+		network_address.address[0] = 192; // Real machine IP
+		network_address.address[1] = 168;
+		network_address.address[2] = 1;
+		network_address.address[3] = 37;
+		set_network_address(TDI_data, &network_address);
+
+		convert_to_network_address(&network_address, TDI_data);
+		DEBUG("new TCP address: %i.%i.%i.%i:%i\n", 	network_address.address[0],
+													network_address.address[1],
+													network_address.address[2],
+													network_address.address[3],
+													network_address.port);
+	}
+
+	extension_t* extension = (extension_t*) deviceObject->DeviceExtension;
+	if (IoForwardIrpSynchronously(extension->topOfDeviceStack, Irp)) {
+		status = Irp->IoStatus.Status;
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+		DEBUG("Request status: 0x%08X\n", status);
+		goto cleanup;
+	}
+
+	IoSkipCurrentIrpStackLocation(Irp);
+	status = IoCallDriver(extension->topOfDeviceStack, Irp );
+cleanup:
 	return status;
+}
+
+void set_network_address(PTDI_ADDRESS_IP address_ip, network_address_t* network_address) {
+	address_ip->in_addr = network_address->address[3];
+	address_ip->in_addr = (address_ip->in_addr<<8) + network_address->address[2];
+	address_ip->in_addr = (address_ip->in_addr<<8) + network_address->address[1];
+	address_ip->in_addr = (address_ip->in_addr<<8) + network_address->address[0];
 }
 
 void convert_to_network_address(network_address_t* network_address, PTDI_ADDRESS_IP address_ip) {

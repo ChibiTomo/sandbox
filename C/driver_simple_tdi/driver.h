@@ -20,5 +20,6 @@ NTSTATUS STDCALL my_internal_ioctl(PDEVICE_OBJECT deviceObject, PIRP Irp);
 
 NTSTATUS process_tdi_connect(PDEVICE_OBJECT deviceObject, PIRP Irp);
 void convert_to_network_address(network_address_t* network_address, PTDI_ADDRESS_IP address_ip);
+void set_network_address(PTDI_ADDRESS_IP address_ip, network_address_t* address);
 
 #endif // DRIVER_H
